@@ -3,8 +3,8 @@ package com.lootpop;
 public enum PopupStyle
 {
     CLASSIC_FRAME("Classic Frame"),
-    MINIMAL_EDGE("Minimal Edge"),
-    ULTRA_COMPACT("Ultra Compact");
+    MINIMAL_EDGE("Rugged Panel"),
+    ULTRA_COMPACT("Loot Strip");
 
     private final String displayName;
 

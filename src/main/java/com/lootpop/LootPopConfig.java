@@ -44,28 +44,55 @@ public interface LootPopConfig extends Config
     @ConfigSection(
         name = "Colours",
         description = "Popup colours",
-        position = 4,
+        position = 5,
         closedByDefault = true
     )
     String coloursSection = "colours";
 
+    @ConfigSection(
+        name = "Tier effects",
+        description = "Choose animated effects for each value tier",
+        position = 4
+    )
+    String tierEffectsSection = "tierEffects";
+
+    @ConfigSection(
+        name = "Sound & testing",
+        description = "Rare-drop sounds and instant popup previews",
+        position = 6,
+        closedByDefault = true
+    )
+    String soundTestingSection = "soundTesting";
+
+    @ConfigItem(
+        keyName = "visualMode",
+        name = "Experience mode",
+        description = "Performance keeps the original lightweight look; Enhanced enables all visual polish",
+        position = 0,
+        section = appearanceSection
+    )
+    default VisualMode visualMode()
+    {
+        return VisualMode.ENHANCED;
+    }
+
     @ConfigItem(
         keyName = "popupStyle",
         name = "Popup style",
-        description = "Choose one of the three compact popup layouts",
-        position = 0,
+        description = "Choose Classic Frame, Rugged Panel or Loot Strip",
+        position = 1,
         section = appearanceSection
     )
     default PopupStyle popupStyle()
     {
-        return PopupStyle.MINIMAL_EDGE;
+        return PopupStyle.CLASSIC_FRAME;
     }
 
     @ConfigItem(
         keyName = "backgroundMode",
         name = "Background",
         description = "Use a solid or transparent background",
-        position = 1,
+        position = 2,
         section = appearanceSection
     )
     default BackgroundMode backgroundMode()
@@ -78,7 +105,7 @@ public interface LootPopConfig extends Config
         keyName = "scale",
         name = "Scale",
         description = "Scale the whole popup",
-        position = 2,
+        position = 3,
         section = appearanceSection
     )
     default int scale()
@@ -91,7 +118,7 @@ public interface LootPopConfig extends Config
         keyName = "maxItems",
         name = "Visible items",
         description = "Maximum number of item icons shown in each popup",
-        position = 3,
+        position = 4,
         section = appearanceSection
     )
     default int maxItems()
@@ -103,7 +130,7 @@ public interface LootPopConfig extends Config
         keyName = "showShadow",
         name = "Drop shadow",
         description = "Draw a soft shadow behind solid popups",
-        position = 4,
+        position = 5,
         section = appearanceSection
     )
     default boolean showShadow()
@@ -111,11 +138,23 @@ public interface LootPopConfig extends Config
         return true;
     }
 
-    @Range(min = 1000, max = 15000)
+    @ConfigItem(
+        keyName = "showItemTooltips",
+        name = "Item hover details",
+        description = "Show item name, quantity, unit price and stack value while hovering an icon",
+        position = 6,
+        section = appearanceSection
+    )
+    default boolean showItemTooltips()
+    {
+        return true;
+    }
+
+    @Range(min = 500, max = 60000)
     @ConfigItem(
         keyName = "displayDuration",
-        name = "Display time (ms)",
-        description = "How long a popup remains fully visible",
+        name = "Visible time (ms)",
+        description = "How long the popup stays fully visible before fading",
         position = 0,
         section = behaviourSection
     )
@@ -124,11 +163,11 @@ public interface LootPopConfig extends Config
         return 3500;
     }
 
-    @Range(min = 0, max = 4000)
+    @Range(min = 0, max = 10000)
     @ConfigItem(
         keyName = "fadeDuration",
-        name = "Fade time (ms)",
-        description = "How long the popup takes to fade out",
+        name = "Fade-out time (ms)",
+        description = "How long the popup takes to disappear after its visible time",
         position = 1,
         section = behaviourSection
     )
@@ -320,25 +359,12 @@ public interface LootPopConfig extends Config
         return true;
     }
 
-    @Range(min = 0, max = 100)
-    @ConfigItem(
-        keyName = "valueTintStrength",
-        name = "Colour fade strength",
-        description = "Strength of the value-coloured background gradient in both background modes",
-        position = 2,
-        section = valueColoursSection
-    )
-    default int valueTintStrength()
-    {
-        return 38;
-    }
-
     @Range(min = 0, max = 2_000_000_000)
     @ConfigItem(
         keyName = "lowValuePrice",
         name = "Low value price",
         description = "Price where the low value colour begins",
-        position = 3,
+        position = 2,
         section = valueColoursSection
     )
     default int lowValuePrice()
@@ -351,7 +377,7 @@ public interface LootPopConfig extends Config
         keyName = "lowValueColour",
         name = "Low value colour",
         description = "Colour used for low value drops",
-        position = 4,
+        position = 3,
         section = valueColoursSection
     )
     default Color lowValueColour()
@@ -364,7 +390,7 @@ public interface LootPopConfig extends Config
         keyName = "mediumValuePrice",
         name = "Medium value price",
         description = "Price where the medium value colour begins",
-        position = 5,
+        position = 4,
         section = valueColoursSection
     )
     default int mediumValuePrice()
@@ -377,7 +403,7 @@ public interface LootPopConfig extends Config
         keyName = "mediumValueColour",
         name = "Medium value colour",
         description = "Colour used for medium value drops",
-        position = 6,
+        position = 5,
         section = valueColoursSection
     )
     default Color mediumValueColour()
@@ -390,7 +416,7 @@ public interface LootPopConfig extends Config
         keyName = "highValuePrice",
         name = "High value price",
         description = "Price where the high value colour begins",
-        position = 7,
+        position = 6,
         section = valueColoursSection
     )
     default int highValuePrice()
@@ -403,7 +429,7 @@ public interface LootPopConfig extends Config
         keyName = "highValueColour",
         name = "High value colour",
         description = "Colour used for high value drops",
-        position = 8,
+        position = 7,
         section = valueColoursSection
     )
     default Color highValueColour()
@@ -416,7 +442,7 @@ public interface LootPopConfig extends Config
         keyName = "insaneValuePrice",
         name = "Insane value price",
         description = "Price where the insane value colour begins",
-        position = 9,
+        position = 8,
         section = valueColoursSection
     )
     default int insaneValuePrice()
@@ -429,7 +455,7 @@ public interface LootPopConfig extends Config
         keyName = "insaneValueColour",
         name = "Insane value colour",
         description = "Colour used for insane value drops",
-        position = 10,
+        position = 9,
         section = valueColoursSection
     )
     default Color insaneValueColour()
@@ -442,7 +468,7 @@ public interface LootPopConfig extends Config
         keyName = "legendaryValuePrice",
         name = "Legendary value price",
         description = "Price where the legendary colour and effects begin",
-        position = 11,
+        position = 10,
         section = valueColoursSection
     )
     default int legendaryValuePrice()
@@ -455,24 +481,134 @@ public interface LootPopConfig extends Config
         keyName = "legendaryValueColour",
         name = "Legendary colour",
         description = "Colour used for legendary drops",
-        position = 12,
+        position = 11,
         section = valueColoursSection
     )
     default Color legendaryValueColour()
     {
-        return new Color(255, 211, 78);
+        return new Color(255, 48, 61);
+    }
+
+    @ConfigItem(
+        keyName = "lowValueEffects",
+        name = "Low — floating motes",
+        description = "Show calm floating particles on low-value drops",
+        position = 0,
+        section = tierEffectsSection
+    )
+    default boolean lowValueEffects()
+    {
+        return true;
+    }
+
+    @ConfigItem(
+        keyName = "mediumValueEffects",
+        name = "Medium — sparkles",
+        description = "Show rising sparkle particles on medium-value drops",
+        position = 1,
+        section = tierEffectsSection
+    )
+    default boolean mediumValueEffects()
+    {
+        return true;
+    }
+
+    @ConfigItem(
+        keyName = "highValueEffects",
+        name = "High — embers",
+        description = "Show energetic ember particles on high-value drops",
+        position = 2,
+        section = tierEffectsSection
+    )
+    default boolean highValueEffects()
+    {
+        return true;
+    }
+
+    @ConfigItem(
+        keyName = "insaneValueEffects",
+        name = "Insane — energy pulse",
+        description = "Show a pulsing aura and bright particles on insane-value drops",
+        position = 3,
+        section = tierEffectsSection
+    )
+    default boolean insaneValueEffects()
+    {
+        return true;
     }
 
     @ConfigItem(
         keyName = "legendaryEffects",
-        name = "Legendary particles",
-        description = "Show an animated shimmer and particles on legendary drops",
-        position = 13,
-        section = valueColoursSection
+        name = "Legendary — crimson storm",
+        description = "Show the crimson storm, light pillar and impact burst on legendary drops",
+        position = 4,
+        section = tierEffectsSection
     )
     default boolean legendaryEffects()
     {
         return true;
+    }
+
+    @Range(min = 25, max = 150)
+    @ConfigItem(
+        keyName = "effectIntensity",
+        name = "Effects intensity",
+        description = "Adjust the amount and brightness of enabled tier effects",
+        position = 5,
+        section = tierEffectsSection
+    )
+    default int effectIntensity()
+    {
+        return 100;
+    }
+
+    @ConfigItem(
+        keyName = "rareDropSounds",
+        name = "Rare drop sounds",
+        description = "Play a different sound for High, Insane and Legendary drops in Enhanced mode",
+        position = 0,
+        section = soundTestingSection
+    )
+    default boolean rareDropSounds()
+    {
+        return true;
+    }
+
+    @Range(min = 0, max = 127)
+    @ConfigItem(
+        keyName = "dropSoundVolume",
+        name = "Sound volume",
+        description = "Volume of Loot Pop rare-drop sounds",
+        position = 1,
+        section = soundTestingSection
+    )
+    default int dropSoundVolume()
+    {
+        return 80;
+    }
+
+    @ConfigItem(
+        keyName = "testTier",
+        name = "Test tier",
+        description = "Choose the value tier used by the next test popup",
+        position = 2,
+        section = soundTestingSection
+    )
+    default TestTier testTier()
+    {
+        return TestTier.LEGENDARY;
+    }
+
+    @ConfigItem(
+        keyName = "showTestPopup",
+        name = "Show test popup",
+        description = "Show a preview popup immediately; this switch resets itself",
+        position = 3,
+        section = soundTestingSection
+    )
+    default boolean showTestPopup()
+    {
+        return false;
     }
 
     @Alpha

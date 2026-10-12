@@ -34,9 +34,14 @@ final class LootNotification
         return totalValue;
     }
 
+    long getAgeMillis(long nowMillis)
+    {
+        return Math.max(0L, nowMillis - createdAtMillis);
+    }
+
     float getAlpha(long nowMillis, int displayDuration, int fadeDuration)
     {
-        long age = Math.max(0L, nowMillis - createdAtMillis);
+        long age = getAgeMillis(nowMillis);
         if (age <= displayDuration)
         {
             return 1.0f;

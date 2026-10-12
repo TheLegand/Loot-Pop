@@ -1,6 +1,7 @@
 package com.lootpop;
 
 import com.google.inject.Provides;
+import java.awt.Color;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -8,9 +9,14 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
 import javax.inject.Inject;
+import net.runelite.api.Client;
 import net.runelite.api.ItemComposition;
+import net.runelite.api.SoundEffectID;
+import net.runelite.api.gameval.ItemID;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStack;
 import net.runelite.client.plugins.Plugin;
@@ -21,12 +27,14 @@ import net.runelite.http.api.loottracker.LootRecordType;
 
 @PluginDescriptor(
     name = "Loot Pop",
-    description = "Shows polished, value-coloured loot popups with legendary effects",
+    description = "Shows polished glass loot popups with value-tier effects",
     tags = {"loot", "drop", "popup", "hud", "overlay", "price", "rare"}
 )
 public class LootPopPlugin extends Plugin
 {
     private static final long DUPLICATE_WINDOW_MILLIS = 500L;
+    private static final Color LEGACY_LEGENDARY_COLOUR = new Color(255, 211, 78);
+    private static final Color CRIMSON_LEGENDARY_COLOUR = new Color(255, 48, 61);
 
     @Inject
     private LootPopConfig config;
@@ -39,6 +47,15 @@ public class LootPopPlugin extends Plugin
 
     @Inject
     private OverlayManager overlayManager;
+
+    @Inject
+    private ConfigManager configManager;
+
+    @Inject
+    private Client client;
+
+    @Inject
+    private ClientThread clientThread;
 
     private final Deque<LootNotification> notifications = new ArrayDeque<>();
     private String lastEventHash = "";
@@ -53,7 +70,25 @@ public class LootPopPlugin extends Plugin
     @Override
     protected void startUp()
     {
+        migrateLegacyLegendaryColour();
         overlayManager.add(overlay);
+    }
+
+    private void migrateLegacyLegendaryColour()
+    {
+        Color savedColour = configManager.getConfiguration(
+            LootPopConfig.GROUP,
+            "legendaryValueColour",
+            Color.class
+        );
+        if (LEGACY_LEGENDARY_COLOUR.equals(savedColour))
+        {
+            configManager.setConfiguration(
+                LootPopConfig.GROUP,
+                "legendaryValueColour",
+                CRIMSON_LEGENDARY_COLOUR
+            );
+        }
     }
 
     @Override
@@ -74,7 +109,6 @@ public class LootPopPlugin extends Plugin
         }
 
         List<LootDisplayItem> items = new ArrayList<>();
-        long totalValue = 0L;
         for (ItemStack itemStack : event.getItems())
         {
             if (itemStack.getQuantity() <= 0)
@@ -96,6 +130,12 @@ public class LootPopPlugin extends Plugin
 
             LootDisplayItem item = new LootDisplayItem(itemStack.getId(), itemStack.getQuantity(), unitPrice);
             items.add(item);
+        }
+
+        items = LootDisplayItem.mergeDuplicates(items);
+        long totalValue = 0L;
+        for (LootDisplayItem item : items)
+        {
             totalValue += item.getTotalValue();
         }
 
@@ -127,6 +167,22 @@ public class LootPopPlugin extends Plugin
             notifications.addFirst(new LootNotification(sourceName, items, totalValue, now));
             trimNotifications();
         }
+
+        playDropSound(totalValue);
+    }
+
+    @Subscribe
+    public void onConfigChanged(ConfigChanged event)
+    {
+        if (!LootPopConfig.GROUP.equals(event.getGroup())
+            || !"showTestPopup".equals(event.getKey())
+            || !config.showTestPopup())
+        {
+            return;
+        }
+
+        showTestPopup(config.testTier());
+        configManager.setConfiguration(LootPopConfig.GROUP, "showTestPopup", false);
     }
 
     synchronized List<LootNotification> getVisibleNotifications()
@@ -153,6 +209,103 @@ public class LootPopPlugin extends Plugin
         {
             notifications.removeLast();
         }
+    }
+
+    private void showTestPopup(TestTier tier)
+    {
+        long targetValue = testValueFor(tier);
+        long bonesUnitValue = Math.max(1L, targetValue / 100L);
+        LootDisplayItem bones = new LootDisplayItem(ItemID.DRAGON_BONES, 21, bonesUnitValue);
+        long plateValue = Math.max(1L, targetValue / 4L);
+        LootDisplayItem platebody = new LootDisplayItem(ItemID.RUNE_PLATEBODY, 1, plateValue);
+        long remainingValue = Math.max(1L, targetValue - bones.getTotalValue() - platebody.getTotalValue());
+        LootDisplayItem rareItem = new LootDisplayItem(ItemID.TWISTED_BOW, 1, remainingValue);
+        List<LootDisplayItem> items = new ArrayList<>();
+        items.add(rareItem);
+        items.add(platebody);
+        items.add(bones);
+
+        long totalValue = 0L;
+        for (LootDisplayItem item : items)
+        {
+            totalValue += item.getTotalValue();
+        }
+
+        synchronized (this)
+        {
+            notifications.addFirst(new LootNotification(
+                tier + " test",
+                items,
+                totalValue,
+                System.currentTimeMillis()
+            ));
+            trimNotifications();
+        }
+        playDropSound(totalValue);
+    }
+
+    private long testValueFor(TestTier tier)
+    {
+        switch (tier)
+        {
+            case LOW:
+                return Math.max(1L, config.lowValuePrice());
+            case MEDIUM:
+                return Math.max(1L, config.mediumValuePrice());
+            case HIGH:
+                return Math.max(1L, config.highValuePrice());
+            case INSANE:
+                return Math.max(1L, config.insaneValuePrice());
+            case LEGENDARY:
+            default:
+                return Math.max(1L, config.legendaryValuePrice());
+        }
+    }
+
+    private void playDropSound(long totalValue)
+    {
+        if (config.visualMode() != VisualMode.ENHANCED
+            || !config.rareDropSounds()
+            || config.dropSoundVolume() <= 0)
+        {
+            return;
+        }
+
+        int primarySound;
+        int secondarySound = -1;
+        int secondaryVolumePercent = 0;
+        if (totalValue >= config.legendaryValuePrice())
+        {
+            primarySound = SoundEffectID.TOWN_CRIER_BELL_DONG;
+            secondarySound = SoundEffectID.FIRE_WOOSH;
+            secondaryVolumePercent = 68;
+        }
+        else if (totalValue >= config.insaneValuePrice())
+        {
+            primarySound = SoundEffectID.GE_ADD_OFFER_DINGALING;
+            secondarySound = SoundEffectID.GE_COIN_TINKLE;
+            secondaryVolumePercent = 62;
+        }
+        else if (totalValue >= config.highValuePrice())
+        {
+            primarySound = SoundEffectID.GE_COIN_TINKLE;
+        }
+        else
+        {
+            return;
+        }
+
+        int volume = config.dropSoundVolume();
+        int extraSound = secondarySound;
+        int extraVolume = Math.max(1, volume * secondaryVolumePercent / 100);
+        clientThread.invokeLater(() ->
+        {
+            client.playSoundEffect(primarySound, volume);
+            if (extraSound >= 0)
+            {
+                client.playSoundEffect(extraSound, extraVolume);
+            }
+        });
     }
 
     private long getUnitPrice(int itemId)
