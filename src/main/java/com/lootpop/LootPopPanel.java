@@ -627,7 +627,44 @@ final class LootPopPanel extends PluginPanel
     static BufferedImage createNavigationIcon()
     {
         BufferedImage brandIcon = ImageUtil.loadImageResource(LootPopPanel.class, "/loot-pop-nav.png");
-        return ImageUtil.resizeImage(brandIcon, 32, 32);
+        return ImageUtil.resizeImage(trimTransparentPadding(brandIcon), 32, 32);
+    }
+
+    static BufferedImage trimTransparentPadding(BufferedImage image)
+    {
+        int minX = image.getWidth();
+        int minY = image.getHeight();
+        int maxX = -1;
+        int maxY = -1;
+
+        for (int y = 0; y < image.getHeight(); y++)
+        {
+            for (int x = 0; x < image.getWidth(); x++)
+            {
+                if ((image.getRGB(x, y) >>> 24) > 8)
+                {
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                }
+            }
+        }
+
+        if (maxX < minX || maxY < minY)
+        {
+            return image;
+        }
+
+        int contentWidth = maxX - minX + 1;
+        int contentHeight = maxY - minY + 1;
+        int squareSize = Math.max(contentWidth, contentHeight);
+        int centerX = (minX + maxX) / 2;
+        int centerY = (minY + maxY) / 2;
+        int cropX = Math.max(0, Math.min(centerX - squareSize / 2, image.getWidth() - squareSize));
+        int cropY = Math.max(0, Math.min(centerY - squareSize / 2, image.getHeight() - squareSize));
+
+        return image.getSubimage(cropX, cropY, squareSize, squareSize);
     }
 
     private static class RoundedPanel extends JPanel

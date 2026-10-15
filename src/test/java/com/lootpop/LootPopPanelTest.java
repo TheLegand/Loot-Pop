@@ -41,4 +41,22 @@ public class LootPopPanelTest
         assertEquals(32, icon.getWidth());
         assertEquals(32, icon.getHeight());
     }
+
+    @Test
+    public void trimsTransparentNavigationIconPaddingWithoutChangingAspectRatio()
+    {
+        BufferedImage source = new BufferedImage(20, 20, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 5; y < 15; y++)
+        {
+            for (int x = 6; x < 14; x++)
+            {
+                source.setRGB(x, y, 0xFFFF0000);
+            }
+        }
+
+        BufferedImage trimmed = LootPopPanel.trimTransparentPadding(source);
+
+        assertEquals(10, trimmed.getWidth());
+        assertEquals(10, trimmed.getHeight());
+    }
 }
