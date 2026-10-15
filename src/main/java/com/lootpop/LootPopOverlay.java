@@ -37,6 +37,8 @@ final class LootPopOverlay extends Overlay
     private static final int ICON_WIDTH = 36;
     private static final int ICON_HEIGHT = 32;
     private static final int ICON_GAP = 1;
+    private static final int GRID_COLUMNS = 5;
+    private static final int GRID_ROW_GAP = 2;
     private static final int TWO_ROW_MIN_WIDTH = 205;
     private static final int CLASSIC_HEIGHT = 66;
     private static final int SURVIVAL_MIN_WIDTH = 218;
@@ -44,6 +46,7 @@ final class LootPopOverlay extends Overlay
     private static final int LOOT_STRIP_MIN_WIDTH = 252;
     private static final int LOOT_STRIP_HEIGHT = 50;
     private static final int VALUE_TINT_STRENGTH = 38;
+    private static final Color TOOLTIP_LABEL_COLOUR = new Color(180, 180, 180);
 
     private final LootPopPlugin plugin;
     private final LootPopConfig config;
@@ -52,6 +55,9 @@ final class LootPopOverlay extends Overlay
     private final TooltipManager tooltipManager;
     private double hoverX = -1.0;
     private double hoverY = -1.0;
+    private double tooltipHoverX = -1.0;
+    private double tooltipHoverY = -1.0;
+    private boolean tooltipEntryActive;
 
     @Inject
     private LootPopOverlay(
@@ -106,23 +112,16 @@ final class LootPopOverlay extends Overlay
         }
         totalHeight += Math.max(0, notifications.size() - 1) * config.popupSpacing();
 
-        double scale = config.scale() / 100.0;
-        int outputWidth = (int) Math.ceil(maxWidth * scale);
-        int outputHeight = (int) Math.ceil(totalHeight * scale);
-        int offsetX = 0;
-        int offsetY = 0;
         Dimension preferredSize = getPreferredSize();
-        if (preferredSize != null && preferredSize.width > 0 && preferredSize.height > 0)
+        double scale = resolveScale(config.scale() / 100.0, preferredSize, maxWidth);
+        int outputWidth = (int) Math.ceil(maxWidth * scale);
+        if (preferredSize != null && preferredSize.width > 0)
         {
             outputWidth = preferredSize.width;
-            outputHeight = preferredSize.height;
-            scale = Math.min(
-                outputWidth / (double) maxWidth,
-                outputHeight / (double) totalHeight
-            );
-            offsetX = (int) Math.round((outputWidth - maxWidth * scale) / 2.0);
-            offsetY = (int) Math.round((outputHeight - totalHeight * scale) / 2.0);
         }
+        int outputHeight = (int) Math.ceil(totalHeight * scale);
+        int offsetX = (int) Math.round((outputWidth - maxWidth * scale) / 2.0);
+        int offsetY = 0;
 
         updateHoverPosition(scale, offsetX, offsetY);
 
@@ -135,25 +134,62 @@ final class LootPopOverlay extends Overlay
         {
             LootNotification notification = notifications.get(i);
             EntrySize entrySize = entrySizes.get(i);
-            float alpha = notification.getAlpha(now, config.displayDuration(), config.fadeDuration());
-            Composite oldComposite = g.getComposite();
-            g.setComposite(AlphaComposite.SrcOver.derive(alpha));
-
+            boolean hovered = hoverX >= 0
+                && hoverX < entrySize.width
+                && hoverY >= y
+                && hoverY < y + entrySize.height;
+            notification.setHovered(config.pauseOnHover() && hovered, now);
+            float alpha = notification.getAlpha(now, plugin.displayDurationFor(notification), config.fadeDuration());
+            Graphics2D entryGraphics = (Graphics2D) g.create();
+            entryGraphics.setComposite(AlphaComposite.SrcOver.derive(alpha));
+            int drawY = y;
+            tooltipEntryActive = hovered;
+            tooltipHoverX = hoverX;
+            tooltipHoverY = hoverY;
+            if (isEnhancedMode() && config.smoothEntrance() && !config.reduceMotion())
+            {
+                double progress = entranceProgress(notification.getAgeMillis(now));
+                double entryScale = 0.92 + progress * 0.08;
+                int slideX = (int) Math.round((1.0 - progress) * 24.0);
+                tooltipHoverX = (hoverX - slideX) / entryScale;
+                tooltipHoverY = (hoverY - y - entrySize.height / 2.0) / entryScale
+                    + entrySize.height / 2.0;
+                entryGraphics.translate(slideX, y + entrySize.height / 2.0);
+                entryGraphics.scale(entryScale, entryScale);
+                entryGraphics.translate(0, -entrySize.height / 2.0);
+                drawY = 0;
+            }
             if (config.popupStyle() == PopupStyle.ULTRA_COMPACT)
             {
-                drawLootStrip(g, notification, 0, y, entrySize.width, entrySize.height, ultraFont, now);
+                drawLootStrip(entryGraphics, notification, 0, drawY, entrySize.width, entrySize.height, ultraFont, now);
             }
             else
             {
-                drawTwoRow(g, notification, 0, y, entrySize.width, entrySize.height, headerFont, now);
+                drawTwoRow(entryGraphics, notification, 0, drawY, entrySize.width, entrySize.height, headerFont, now);
             }
-
-            g.setComposite(oldComposite);
+            entryGraphics.dispose();
             y += entrySize.height + config.popupSpacing();
         }
+        tooltipEntryActive = false;
 
         g.dispose();
         return new Dimension(outputWidth, outputHeight);
+    }
+
+    static double resolveScale(double configuredScale, Dimension preferredSize, int contentWidth)
+    {
+        if (preferredSize == null || preferredSize.width <= 0 || contentWidth <= 0)
+        {
+            return configuredScale;
+        }
+
+        return preferredSize.width / (double) contentWidth;
+    }
+
+    static double entranceProgress(long ageMillis)
+    {
+        double linear = Math.max(0.0, Math.min(1.0, ageMillis / 280.0));
+        return 1.0 - Math.pow(1.0 - linear, 3.0);
     }
 
     private EntrySize measureEntry(
@@ -163,8 +199,8 @@ final class LootPopOverlay extends Overlay
         Font ultraFont
     )
     {
-        int itemCount = Math.min(config.maxItems(), notification.getItems().size());
-        int itemsWidth = measureItemsWidth(g, notification.getItems(), itemCount);
+        int itemCount = displayedItemCount(notification.getItems());
+        int itemsWidth = measureItemsGridWidth(g, notification.getItems(), itemCount);
         String value = formatGp(notification.getTotalValue());
 
         if (config.popupStyle() == PopupStyle.ULTRA_COMPACT)
@@ -172,21 +208,27 @@ final class LootPopOverlay extends Overlay
             g.setFont(ultraFont);
             FontMetrics metrics = g.getFontMetrics();
             int nameWidth = Math.min(92, metrics.stringWidth(notification.getSourceName()));
-            int width = 15 + nameWidth + 14 + itemsWidth
+            int collectionBadgeWidth = notification.isCollectionLogUnlock() ? 31 : 0;
+            int width = 15 + nameWidth + collectionBadgeWidth + 14 + itemsWidth
                 + 12 + metrics.stringWidth(value) + 13;
             return new EntrySize(Math.max(LOOT_STRIP_MIN_WIDTH, width), LOOT_STRIP_HEIGHT);
         }
 
         g.setFont(headerFont);
         FontMetrics metrics = g.getFontMetrics();
+        int collectionBadgeWidth = notification.isCollectionLogUnlock() ? 31 : 0;
         int headerWidth = Math.min(145, metrics.stringWidth(notification.getSourceName()))
+            + collectionBadgeWidth
             + metrics.stringWidth(value)
             + 30;
         boolean survival = config.popupStyle() == PopupStyle.MINIMAL_EDGE;
         int minimumWidth = survival ? SURVIVAL_MIN_WIDTH : TWO_ROW_MIN_WIDTH;
         int contentPadding = survival ? 24 : 14;
         int width = Math.max(minimumWidth, Math.max(itemsWidth + contentPadding, headerWidth));
-        return new EntrySize(width, survival ? SURVIVAL_HEIGHT : CLASSIC_HEIGHT);
+        int occupiedSlots = itemCount + (notification.getItems().size() > itemCount ? 1 : 0);
+        int rows = Math.max(1, (occupiedSlots + GRID_COLUMNS - 1) / GRID_COLUMNS);
+        int baseHeight = survival ? SURVIVAL_HEIGHT : CLASSIC_HEIGHT;
+        return new EntrySize(width, baseHeight + (rows - 1) * (ICON_HEIGHT + GRID_ROW_GAP));
     }
 
     private void drawTwoRow(
@@ -210,11 +252,29 @@ final class LootPopOverlay extends Overlay
         String value = formatGp(notification.getTotalValue());
         int rightPadding = survival ? 12 : 7;
         int valueX = x + width - rightPadding - metrics.stringWidth(value);
-        int maxNameWidth = Math.max(20, valueX - (x + leftPadding) - 8);
+        boolean lucky = isLucky(notification.getItems());
+        int nameX = x + leftPadding + (lucky ? 13 : 0);
+        int collectionBadgeWidth = notification.isCollectionLogUnlock() ? 31 : 0;
+        int maxNameWidth = Math.max(20, valueX - nameX - 8 - collectionBadgeWidth);
         String name = ellipsize(notification.getSourceName(), metrics, maxNameWidth);
         int headerBaseline = y + (survival ? 20 : 18);
-        drawText(g, name, x + leftPadding, headerBaseline, config.npcNameColour());
+        if (lucky)
+        {
+            drawLuckyStar(g, x + leftPadding + 5, headerBaseline - 5, rarityColour(rarestRarity(notification.getItems())));
+        }
+        drawText(g, name, nameX, headerBaseline, config.npcNameColour());
+        if (notification.isCollectionLogUnlock())
+        {
+            drawCollectionLogBadge(g, nameX + metrics.stringWidth(name) + 5, headerBaseline - 12);
+        }
         drawText(g, value, valueX, headerBaseline, tier.valueColour);
+        addTotalValueTooltipIfHovered(
+            notification.getTotalValue(),
+            valueX,
+            headerBaseline,
+            metrics,
+            tier.valueColour
+        );
 
         if (config.showSeparator())
         {
@@ -224,14 +284,16 @@ final class LootPopOverlay extends Overlay
             g.drawLine(x + leftPadding, separatorY, x + width - rightPadding, separatorY);
         }
 
-        int itemCount = Math.min(config.maxItems(), notification.getItems().size());
-        drawItems(
+        int itemCount = displayedItemCount(notification.getItems());
+        drawItemsGrid(
             g,
             notification.getItems(),
             itemCount,
             x + leftPadding,
             y + (survival ? 33 : 29),
-            tier.accentColour
+            tier.accentColour,
+            now,
+            notification
         );
     }
 
@@ -256,14 +318,24 @@ final class LootPopOverlay extends Overlay
         int valueChipWidth = valueWidth + 20;
         int valueChipX = x + width - valueChipWidth;
         int valueX = x + width - 10 - valueWidth;
-        int nameX = x + 15;
-        String name = ellipsize(notification.getSourceName(), metrics, 92);
+        boolean lucky = isLucky(notification.getItems());
+        int nameX = x + 15 + (lucky ? 13 : 0);
+        int collectionBadgeWidth = notification.isCollectionLogUnlock() ? 31 : 0;
+        String name = ellipsize(notification.getSourceName(), metrics, 92 - collectionBadgeWidth);
+        if (lucky)
+        {
+            drawLuckyStar(g, x + 19, y + 26, rarityColour(rarestRarity(notification.getItems())));
+        }
         drawText(g, name, nameX, y + 31, config.npcNameColour());
+        if (notification.isCollectionLogUnlock())
+        {
+            drawCollectionLogBadge(g, nameX + metrics.stringWidth(name) + 4, y + 18);
+        }
 
-        int itemCount = Math.min(config.maxItems(), notification.getItems().size());
-        int itemsX = nameX + metrics.stringWidth(name) + 14;
-        int itemsWidth = measureItemsWidth(g, notification.getItems(), itemCount);
-        drawItems(g, notification.getItems(), itemCount, itemsX, y + 9, tier.accentColour);
+        int itemCount = displayedItemCount(notification.getItems());
+        int itemsX = nameX + metrics.stringWidth(name) + collectionBadgeWidth + 14;
+        int itemsWidth = measureItemsGridWidth(g, notification.getItems(), itemCount);
+        drawItemsGrid(g, notification.getItems(), itemCount, itemsX, y + 9, tier.accentColour, now, notification);
 
         if (config.showSeparator())
         {
@@ -287,6 +359,13 @@ final class LootPopOverlay extends Overlay
         g.setStroke(new BasicStroke(1.0f));
         g.drawLine(valueChipX + 7, y + 5, valueChipX, y + height - 6);
         drawText(g, value, valueX, y + 31, tier.valueColour);
+        addTotalValueTooltipIfHovered(
+            notification.getTotalValue(),
+            valueX,
+            y + 31,
+            metrics,
+            tier.valueColour
+        );
     }
 
     private void drawBackground(
@@ -309,7 +388,7 @@ final class LootPopOverlay extends Overlay
         Shape panel = createPanelShape(style, x, y, width, height);
 
         boolean enhanced = isEnhancedMode();
-        if (enhanced && tier.tier == ValueTier.LEGENDARY && config.legendaryEffects())
+        if (enhanced && !config.reduceMotion() && tier.tier == ValueTier.LEGENDARY && config.legendaryEffects())
         {
             drawLegendaryBurst(
                 g,
@@ -811,6 +890,10 @@ final class LootPopOverlay extends Overlay
 
     private boolean effectsEnabled(ValueTier tier)
     {
+        if (config.reduceMotion())
+        {
+            return false;
+        }
         switch (tier)
         {
             case LOW:
@@ -1061,38 +1144,61 @@ final class LootPopOverlay extends Overlay
         return Math.max(0, Math.min(255, (int) Math.round(alpha * intensity)));
     }
 
-    private void drawItems(
+    private void drawItemsGrid(
         Graphics2D g,
         List<LootDisplayItem> items,
         int itemCount,
         int x,
         int y,
-        Color accentColour
+        Color accentColour,
+        long now,
+        LootNotification notification
     )
     {
         Font oldFont = g.getFont();
         Font quantityFont = FontManager.getRunescapeBoldFont().deriveFont(Font.BOLD, 14f);
         int cursorX = x;
+        int cursorY = y;
         for (int i = 0; i < itemCount; i++)
         {
+            if (i > 0 && i % GRID_COLUMNS == 0)
+            {
+                cursorX = x;
+                cursorY += ICON_HEIGHT + GRID_ROW_GAP;
+            }
             LootDisplayItem item = items.get(i);
+            Composite oldItemComposite = g.getComposite();
+            float revealAlpha = itemRevealAlpha(notification.getAgeMillis(now), i);
+            if (revealAlpha < 1.0f && oldItemComposite instanceof AlphaComposite)
+            {
+                float parentAlpha = ((AlphaComposite) oldItemComposite).getAlpha();
+                g.setComposite(AlphaComposite.SrcOver.derive(parentAlpha * revealAlpha));
+            }
             BufferedImage image = getItemImage(item);
             int slotWidth = itemSlotWidth(g, item, quantityFont);
             int itemX = cursorX + (slotWidth - ICON_WIDTH) / 2;
             if (image != null)
             {
+                if (isEnhancedMode() && config.itemSpotlights())
+                {
+                    DropRarity rarity = rarityFor(item);
+                    if (rarity == DropRarity.ULTRA_RARE)
+                    {
+                        drawUltraRareItemGlow(g, itemX, cursorY, rarityColour(rarity), now, i);
+                    }
+                }
                 if (isEnhancedMode())
                 {
                     TierVisual itemTier = tierForValue(item.getTotalValue());
                     if (itemTier.tier != ValueTier.BASE)
                     {
                         g.setColor(withAlpha(itemTier.accentColour, 24));
-                        g.fillOval(itemX + 2, y - 1, 32, 34);
+                        g.fillOval(itemX + 2, cursorY - 1, 32, 34);
                         g.setColor(withAlpha(itemTier.accentColour, 42));
-                        g.fillOval(itemX + 7, y + 4, 22, 24);
+                        g.fillOval(itemX + 7, cursorY + 4, 22, 24);
                     }
                 }
-                g.drawImage(image, itemX, y, null);
+                g.drawImage(image, itemX, cursorY, null);
 
                 if (item.getQuantity() > 1)
                 {
@@ -1101,17 +1207,20 @@ final class LootPopOverlay extends Overlay
                         g,
                         formatQuantityLabel(item.getQuantity()),
                         cursorX + 1,
-                        y + 13,
+                        cursorY + 13,
                         quantityColourForValue(item.getTotalValue())
                     );
                 }
             }
 
-            if (config.showItemTooltips()
-                && hoverX >= itemX
-                && hoverX < itemX + ICON_WIDTH
-                && hoverY >= y
-                && hoverY < y + ICON_HEIGHT)
+            g.setComposite(oldItemComposite);
+
+            if (tooltipEntryActive
+                && config.showItemTooltips()
+                && tooltipHoverX >= itemX
+                && tooltipHoverX < itemX + ICON_WIDTH
+                && tooltipHoverY >= cursorY
+                && tooltipHoverY < cursorY + ICON_HEIGHT)
             {
                 tooltipManager.add(new Tooltip(buildItemTooltip(item)));
             }
@@ -1123,13 +1232,24 @@ final class LootPopOverlay extends Overlay
         {
             drawOverflowIndicator(
                 g,
-                hiddenCount,
+                items,
+                itemCount,
                 cursorX,
-                y,
+                cursorY,
                 accentColour
             );
         }
         g.setFont(oldFont);
+    }
+
+    private float itemRevealAlpha(long ageMillis, int itemIndex)
+    {
+        if (!isEnhancedMode() || !config.smoothEntrance() || config.reduceMotion())
+        {
+            return 1.0f;
+        }
+        long delay = 70L + itemIndex * 45L;
+        return (float) Math.max(0.0, Math.min(1.0, (ageMillis - delay) / 150.0));
     }
 
     private static int itemSlotWidth(Graphics2D g, LootDisplayItem item, Font quantityFont)
@@ -1146,38 +1266,46 @@ final class LootPopOverlay extends Overlay
         return Math.max(ICON_WIDTH, labelWidth + 4);
     }
 
-    private static int measureItemsWidth(Graphics2D g, List<LootDisplayItem> items, int itemCount)
+    private static int measureItemsGridWidth(Graphics2D g, List<LootDisplayItem> items, int itemCount)
     {
         Font quantityFont = FontManager.getRunescapeBoldFont().deriveFont(Font.BOLD, 14f);
-        int width = 0;
+        int rowWidth = 0;
+        int maxWidth = 0;
         for (int i = 0; i < itemCount; i++)
         {
-            if (width > 0)
+            if (i > 0 && i % GRID_COLUMNS == 0)
             {
-                width += ICON_GAP;
+                maxWidth = Math.max(maxWidth, rowWidth);
+                rowWidth = 0;
             }
-            width += itemSlotWidth(g, items.get(i), quantityFont);
+            if (rowWidth > 0)
+            {
+                rowWidth += ICON_GAP;
+            }
+            rowWidth += itemSlotWidth(g, items.get(i), quantityFont);
         }
 
         if (items.size() > itemCount)
         {
-            if (width > 0)
+            if (rowWidth > 0)
             {
-                width += ICON_GAP;
+                rowWidth += ICON_GAP;
             }
-            width += ICON_WIDTH;
+            rowWidth += ICON_WIDTH;
         }
-        return width;
+        return Math.max(maxWidth, rowWidth);
     }
 
-    private static void drawOverflowIndicator(
+    private void drawOverflowIndicator(
         Graphics2D g,
-        int hiddenCount,
+        List<LootDisplayItem> items,
+        int itemCount,
         int x,
         int y,
         Color accentColour
     )
     {
+        int hiddenCount = items.size() - itemCount;
         String label = "+" + hiddenCount;
         Font oldFont = g.getFont();
         g.setFont(FontManager.getRunescapeBoldFont().deriveFont(Font.BOLD, 13f));
@@ -1193,7 +1321,27 @@ final class LootPopOverlay extends Overlay
         g.setColor(withAlpha(accentColour, 150));
         g.drawRoundRect(badgeX, badgeY, badgeSize - 1, badgeSize - 1, 9, 9);
         drawText(g, label, textX, textY, Color.WHITE);
+        if (tooltipEntryActive
+            && config.showItemTooltips()
+            && tooltipHoverX >= badgeX
+            && tooltipHoverX < badgeX + badgeSize
+            && tooltipHoverY >= badgeY
+            && tooltipHoverY < badgeY + badgeSize)
+        {
+            tooltipManager.add(new Tooltip(buildHiddenItemsTooltip(items, itemCount)));
+        }
         g.setFont(oldFont);
+    }
+
+    private int displayedItemCount(List<LootDisplayItem> items)
+    {
+        int capacity = config.popupStyle() == PopupStyle.ULTRA_COMPACT ? GRID_COLUMNS : GRID_COLUMNS * 2;
+        int requested = Math.min(Math.min(config.maxItems(), capacity), items.size());
+        if (items.size() > requested && requested > 0 && requested % GRID_COLUMNS == 0)
+        {
+            return requested - 1;
+        }
+        return requested;
     }
 
     private boolean isEnhancedMode()
@@ -1205,7 +1353,7 @@ final class LootPopOverlay extends Overlay
     {
         hoverX = -1.0;
         hoverY = -1.0;
-        if (!config.showItemTooltips() || scale <= 0.0)
+        if (scale <= 0.0)
         {
             return;
         }
@@ -1223,15 +1371,110 @@ final class LootPopOverlay extends Overlay
 
     private String buildItemTooltip(LootDisplayItem item)
     {
-        ItemComposition composition = itemManager.getItemComposition(item.getItemId());
+        int canonicalId = itemManager.canonicalize(item.getItemId());
+        ItemComposition composition = itemManager.getItemComposition(canonicalId);
         String itemName = composition == null ? "Unknown item" : composition.getName();
         Color tierColour = quantityColourForValue(item.getTotalValue());
         NumberFormat numbers = NumberFormat.getIntegerInstance(Locale.US);
+        long gePrice = Math.max(0L, itemManager.getItemPrice(canonicalId));
+        long highAlchemyPrice = composition == null ? 0L : Math.max(0L, composition.getHaPrice());
+        String dropRate = item.getDropRate() == null ? "N/A" : item.getDropRate();
+        DropRarity rarity = rarityFor(item);
+        Color dropRateColour = item.getDropRate() == null
+            ? TOOLTIP_LABEL_COLOUR
+            : rarityColour(rarity);
+        HoverDetailMode mode = config.hoverDetailMode();
+        boolean showPrices = mode == HoverDetailMode.DETAILED
+            || (mode == HoverDetailMode.CUSTOM && config.hoverShowPrices());
+        boolean showStack = mode != HoverDetailMode.CUSTOM || config.hoverShowStackValue();
+        boolean showChance = mode != HoverDetailMode.CUSTOM || config.hoverShowDropChance();
 
-        return ColorUtil.wrapWithColorTag(itemName, tierColour)
-            + "<br>Quantity: " + ColorUtil.wrapWithColorTag(numbers.format(item.getQuantity()), Color.WHITE)
-            + "<br>Unit price: " + ColorUtil.wrapWithColorTag(numbers.format(item.getUnitPrice()) + " gp", Color.WHITE)
-            + "<br>Stack value: " + ColorUtil.wrapWithColorTag(numbers.format(item.getTotalValue()) + " gp", tierColour);
+        StringBuilder tooltip = new StringBuilder(ColorUtil.wrapWithColorTag(itemName, tierColour));
+        tooltip.append(tooltipRow("Qty", numbers.format(item.getQuantity()), Color.WHITE));
+        if (showPrices)
+        {
+            tooltip.append(tooltipRow("GE", formatTooltipPrice(gePrice, numbers), Color.WHITE));
+            tooltip.append(tooltipRow("HA", formatTooltipPrice(highAlchemyPrice, numbers), Color.WHITE));
+        }
+        if (showStack)
+        {
+            tooltip.append(tooltipRow("Stack", formatTooltipPrice(item.getTotalValue(), numbers), tierColour));
+        }
+        if (showChance)
+        {
+            tooltip.append(tooltipRow("Chance", dropRate, dropRateColour));
+        }
+        return tooltip.toString();
+    }
+
+    private void addTotalValueTooltipIfHovered(
+        long totalValue,
+        int textX,
+        int baseline,
+        FontMetrics metrics,
+        Color valueColour
+    )
+    {
+        String compactValue = formatGp(totalValue);
+        int padding = 4;
+        int left = textX - padding;
+        int right = textX + metrics.stringWidth(compactValue) + padding;
+        int top = baseline - metrics.getAscent() - padding;
+        int bottom = baseline + metrics.getDescent() + padding;
+        if (!tooltipEntryActive
+            || tooltipHoverX < left || tooltipHoverX >= right
+            || tooltipHoverY < top || tooltipHoverY >= bottom)
+        {
+            return;
+        }
+
+        String priceSource = config.priceMode() == PriceMode.HIGH_ALCHEMY
+            ? "HA total"
+            : "GE total";
+        String tooltip = ColorUtil.wrapWithColorTag(priceSource, TOOLTIP_LABEL_COLOUR)
+            + "<br>"
+            + ColorUtil.wrapWithColorTag(formatExactGp(totalValue), valueColour);
+        tooltipManager.add(new Tooltip(tooltip));
+    }
+
+    private String buildHiddenItemsTooltip(List<LootDisplayItem> items, int itemCount)
+    {
+        int hiddenCount = items.size() - itemCount;
+        StringBuilder tooltip = new StringBuilder(ColorUtil.wrapWithColorTag(
+            "Hidden items (" + hiddenCount + ")",
+            Color.WHITE
+        ));
+        NumberFormat numbers = NumberFormat.getIntegerInstance(Locale.US);
+        int shown = 0;
+        for (int i = itemCount; i < items.size() && shown < 8; i++, shown++)
+        {
+            LootDisplayItem item = items.get(i);
+            int canonicalId = itemManager.canonicalize(item.getItemId());
+            ItemComposition composition = itemManager.getItemComposition(canonicalId);
+            String name = composition == null ? "Unknown item" : composition.getName();
+            String quantity = item.getQuantity() > 1 ? " x" + numbers.format(item.getQuantity()) : "";
+            tooltip.append("<br>")
+                .append(ColorUtil.wrapWithColorTag(name + quantity, rarityColour(rarityFor(item))))
+                .append(" ")
+                .append(ColorUtil.wrapWithColorTag(formatTooltipPrice(item.getTotalValue(), numbers), TOOLTIP_LABEL_COLOUR));
+        }
+        if (hiddenCount > shown)
+        {
+            tooltip.append("<br>")
+                .append(ColorUtil.wrapWithColorTag("+" + (hiddenCount - shown) + " more", TOOLTIP_LABEL_COLOUR));
+        }
+        return tooltip.toString();
+    }
+
+    private static String tooltipRow(String label, String value, Color valueColour)
+    {
+        return "<br>" + ColorUtil.wrapWithColorTag(label + ":", TOOLTIP_LABEL_COLOUR)
+            + " " + ColorUtil.wrapWithColorTag(value, valueColour);
+    }
+
+    private static String formatTooltipPrice(long value, NumberFormat numbers)
+    {
+        return value > 0L ? numbers.format(value) + " gp" : "N/A";
     }
 
     private BufferedImage getItemImage(LootDisplayItem item)
@@ -1281,21 +1524,170 @@ final class LootPopOverlay extends Overlay
         return new TierVisual(config.accentColour(), config.totalValueColour(), ValueTier.BASE);
     }
 
+    private DropRarity rarityFor(LootDisplayItem item)
+    {
+        return plugin.rarityForRate(item.getDropRateOneIn());
+    }
+
+    private Color rarityColour(DropRarity rarity)
+    {
+        boolean colourblind = config.rarityPalette() == RarityPalette.COLOURBLIND;
+        switch (rarity)
+        {
+            case UNCOMMON:
+                return colourblind ? new Color(0, 158, 115) : new Color(105, 209, 125);
+            case RARE:
+                return colourblind ? new Color(0, 114, 178) : new Color(93, 173, 226);
+            case VERY_RARE:
+                return colourblind ? new Color(230, 159, 0) : new Color(199, 125, 255);
+            case ULTRA_RARE:
+                return colourblind ? new Color(213, 94, 0) : new Color(255, 77, 94);
+            case COMMON:
+                return new Color(184, 192, 204);
+            case UNKNOWN:
+            default:
+                return TOOLTIP_LABEL_COLOUR;
+        }
+    }
+
+    private DropRarity rarestRarity(List<LootDisplayItem> items)
+    {
+        DropRarity result = DropRarity.UNKNOWN;
+        double rarest = 0.0;
+        for (LootDisplayItem item : items)
+        {
+            if (item.getDropRateOneIn() > rarest)
+            {
+                rarest = item.getDropRateOneIn();
+                result = rarityFor(item);
+            }
+        }
+        return result;
+    }
+
+    private boolean isLucky(List<LootDisplayItem> items)
+    {
+        if (!config.enableDropRarity() || !config.showLuckyIndicator())
+        {
+            return false;
+        }
+        for (LootDisplayItem item : items)
+        {
+            if (item.getDropRateOneIn() >= config.luckyDropRate())
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void drawLuckyStar(Graphics2D g, int centerX, int centerY, Color colour)
+    {
+        Path2D star = new Path2D.Float();
+        for (int i = 0; i < 10; i++)
+        {
+            double angle = -Math.PI / 2.0 + i * Math.PI / 5.0;
+            double radius = i % 2 == 0 ? 5.0 : 2.2;
+            double px = centerX + Math.cos(angle) * radius;
+            double py = centerY + Math.sin(angle) * radius;
+            if (i == 0)
+            {
+                star.moveTo(px, py);
+            }
+            else
+            {
+                star.lineTo(px, py);
+            }
+        }
+        star.closePath();
+        g.setColor(new Color(0, 0, 0, 210));
+        g.setStroke(new BasicStroke(2.4f));
+        g.draw(star);
+        g.setColor(colour);
+        g.fill(star);
+    }
+
+    private void drawCollectionLogBadge(Graphics2D g, int x, int y)
+    {
+        Font oldFont = g.getFont();
+        g.setFont(FontManager.getRunescapeBoldFont().deriveFont(Font.BOLD, 10f));
+        g.setColor(new Color(0, 0, 0, 180));
+        g.fillRoundRect(x, y, 27, 13, 5, 5);
+        g.setColor(new Color(255, 205, 72, 220));
+        g.drawRoundRect(x, y, 26, 12, 5, 5);
+        drawText(g, "NEW", x + 4, y + 10, new Color(255, 224, 112));
+        g.setFont(oldFont);
+    }
+
+    private void drawUltraRareItemGlow(
+        Graphics2D g,
+        int itemX,
+        int itemY,
+        Color colour,
+        long now,
+        int itemIndex
+    )
+    {
+        double pulse = config.reduceMotion()
+            ? 0.55
+            : (Math.sin(now / 180.0 + itemIndex * 0.9) + 1.0) / 2.0;
+        int centerX = itemX + ICON_WIDTH / 2;
+        int centerY = itemY + ICON_HEIGHT / 2;
+        int outerAlpha = 24 + (int) Math.round(pulse * 22.0);
+        int middleAlpha = 38 + (int) Math.round(pulse * 28.0);
+        int coreAlpha = 52 + (int) Math.round(pulse * 34.0);
+
+        // Layered translucent light creates a soft bloom with no visible border.
+        g.setColor(withAlpha(colour, outerAlpha));
+        g.fillOval(centerX - 27, centerY - 24, 54, 48);
+        g.setColor(withAlpha(colour, middleAlpha));
+        g.fillOval(centerX - 22, centerY - 20, 44, 40);
+        g.setColor(withAlpha(Color.WHITE, coreAlpha));
+        g.fillOval(centerX - 14, centerY - 13, 28, 26);
+
+        if (config.reduceMotion())
+        {
+            return;
+        }
+
+        // Slow rotating light shards stay behind the icon and make 1/5000+ drops feel exceptional.
+        double rotation = now / 520.0 + itemIndex * 0.7;
+        g.setStroke(new BasicStroke(1.2f));
+        for (int ray = 0; ray < 6; ray++)
+        {
+            double angle = rotation + ray * Math.PI / 3.0;
+            int innerX = centerX + (int) Math.round(Math.cos(angle) * 16.0);
+            int innerY = centerY + (int) Math.round(Math.sin(angle) * 14.0);
+            int outerX = centerX + (int) Math.round(Math.cos(angle) * (22.0 + pulse * 4.0));
+            int outerY = centerY + (int) Math.round(Math.sin(angle) * (20.0 + pulse * 3.0));
+            g.setColor(withAlpha(ray % 2 == 0 ? Color.WHITE : colour, 70 + (int) Math.round(pulse * 50.0)));
+            g.drawLine(innerX, innerY, outerX, outerY);
+        }
+    }
+
     private Color quantityColourForValue(long value)
     {
         TierVisual tier = tierForValue(value);
         return tier.tier == ValueTier.BASE ? Color.WHITE : tier.valueColour;
     }
 
-    private static void drawText(Graphics2D g, String text, int x, int baseline, Color colour)
+    private void drawText(Graphics2D g, String text, int x, int baseline, Color colour)
     {
-        g.setColor(new Color(0, 0, 0, 190));
+        if (config.highContrastText())
+        {
+            g.setColor(new Color(0, 0, 0, 245));
+            g.drawString(text, x - 1, baseline);
+            g.drawString(text, x + 1, baseline);
+            g.drawString(text, x, baseline - 1);
+            g.drawString(text, x, baseline + 1);
+        }
+        g.setColor(new Color(0, 0, 0, config.highContrastText() ? 245 : 190));
         g.drawString(text, x + 1, baseline + 1);
         g.setColor(colour);
         g.drawString(text, x, baseline);
     }
 
-    private static void drawStackText(Graphics2D g, String text, int x, int baseline, Color colour)
+    private void drawStackText(Graphics2D g, String text, int x, int baseline, Color colour)
     {
         g.setColor(new Color(0, 0, 0, 235));
         g.drawString(text, x - 1, baseline);
@@ -1344,6 +1736,11 @@ final class LootPopOverlay extends Overlay
             return formatCompact(value, 1_000L, "K") + " gp";
         }
         return value + " gp";
+    }
+
+    static String formatExactGp(long value)
+    {
+        return NumberFormat.getIntegerInstance(Locale.US).format(value) + " gp";
     }
 
     static String formatQuantityLabel(int quantity)

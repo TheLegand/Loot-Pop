@@ -42,9 +42,24 @@ public interface LootPopConfig extends Config
     String valueColoursSection = "valueColours";
 
     @ConfigSection(
+        name = "Drop rarity",
+        description = "Wiki drop-rate tiers, lucky drops and item spotlighting",
+        position = 4
+    )
+    String dropRaritySection = "dropRarity";
+
+    @ConfigSection(
+        name = "Hover details",
+        description = "Choose the information shown while hovering an item",
+        position = 5,
+        closedByDefault = true
+    )
+    String hoverDetailsSection = "hoverDetails";
+
+    @ConfigSection(
         name = "Colours",
         description = "Popup colours",
-        position = 5,
+        position = 8,
         closedByDefault = true
     )
     String coloursSection = "colours";
@@ -52,17 +67,41 @@ public interface LootPopConfig extends Config
     @ConfigSection(
         name = "Tier effects",
         description = "Choose animated effects for each value tier",
-        position = 4
+        position = 6
     )
     String tierEffectsSection = "tierEffects";
 
     @ConfigSection(
         name = "Sound & testing",
         description = "Rare-drop sounds and instant popup previews",
-        position = 6,
+        position = 9,
         closedByDefault = true
     )
     String soundTestingSection = "soundTesting";
+
+    @ConfigSection(
+        name = "Accessibility",
+        description = "Motion, contrast and colour accessibility",
+        position = 7,
+        closedByDefault = true
+    )
+    String accessibilitySection = "accessibility";
+
+    @ConfigSection(
+        name = "Rare screenshots",
+        description = "Optional local screenshots for valuable or rare drops",
+        position = 10,
+        closedByDefault = true
+    )
+    String screenshotsSection = "screenshots";
+
+    @ConfigSection(
+        name = "Side panel",
+        description = "Recent loot and session summary controls",
+        position = 11,
+        closedByDefault = true
+    )
+    String sidePanelSection = "sidePanel";
 
     @ConfigItem(
         keyName = "visualMode",
@@ -141,11 +180,59 @@ public interface LootPopConfig extends Config
     @ConfigItem(
         keyName = "showItemTooltips",
         name = "Item hover details",
-        description = "Show item name, quantity, unit price and stack value while hovering an icon",
+        description = "Show quantity, GE and high alchemy values, stack value and Wiki drop chance while hovering an icon",
         position = 6,
         section = appearanceSection
     )
     default boolean showItemTooltips()
+    {
+        return true;
+    }
+
+    @ConfigItem(
+        keyName = "hoverDetailMode",
+        name = "Hover preset",
+        description = "Compact shows essentials, Detailed shows everything, and Custom uses the switches below",
+        position = 0,
+        section = hoverDetailsSection
+    )
+    default HoverDetailMode hoverDetailMode()
+    {
+        return HoverDetailMode.DETAILED;
+    }
+
+    @ConfigItem(
+        keyName = "hoverShowPrices",
+        name = "Custom: GE and HA prices",
+        description = "Show Grand Exchange and high alchemy unit prices in Custom mode",
+        position = 1,
+        section = hoverDetailsSection
+    )
+    default boolean hoverShowPrices()
+    {
+        return true;
+    }
+
+    @ConfigItem(
+        keyName = "hoverShowStackValue",
+        name = "Custom: stack value",
+        description = "Show the selected price source stack value in Custom mode",
+        position = 2,
+        section = hoverDetailsSection
+    )
+    default boolean hoverShowStackValue()
+    {
+        return true;
+    }
+
+    @ConfigItem(
+        keyName = "hoverShowDropChance",
+        name = "Custom: drop chance",
+        description = "Show the bundled OSRS Wiki drop chance in Custom mode",
+        position = 3,
+        section = hoverDetailsSection
+    )
+    default boolean hoverShowDropChance()
     {
         return true;
     }
@@ -210,6 +297,81 @@ public interface LootPopConfig extends Config
         section = behaviourSection
     )
     default boolean newestOnTop()
+    {
+        return true;
+    }
+
+    @ConfigItem(
+        keyName = "pauseOnHover",
+        name = "Pause while hovering",
+        description = "Pause a popup's visible and fade timers while the mouse is over it",
+        position = 5,
+        section = behaviourSection
+    )
+    default boolean pauseOnHover()
+    {
+        return true;
+    }
+
+    @Range(min = 0, max = 30)
+    @ConfigItem(
+        keyName = "queuedPopups",
+        name = "Queued popups",
+        description = "Keep extra kills waiting when the visible popup stack is full; zero disables the queue",
+        position = 6,
+        section = behaviourSection
+    )
+    default int queuedPopups()
+    {
+        return 12;
+    }
+
+    @ConfigItem(
+        keyName = "adaptiveDisplayTime",
+        name = "Adaptive display time",
+        description = "Keep the normal visible time as a minimum and give rare drops extra time",
+        position = 7,
+        section = behaviourSection
+    )
+    default boolean adaptiveDisplayTime()
+    {
+        return true;
+    }
+
+    @Range(min = 0, max = 10000)
+    @ConfigItem(
+        keyName = "rareExtraTime",
+        name = "Rare extra time (ms)",
+        description = "Extra visible time for Rare and Very rare drops",
+        position = 8,
+        section = behaviourSection
+    )
+    default int rareExtraTime()
+    {
+        return 1_500;
+    }
+
+    @Range(min = 0, max = 20000)
+    @ConfigItem(
+        keyName = "ultraRareExtraTime",
+        name = "Ultra extra time (ms)",
+        description = "Extra visible time for Ultra rare drops",
+        position = 9,
+        section = behaviourSection
+    )
+    default int ultraRareExtraTime()
+    {
+        return 3_500;
+    }
+
+    @ConfigItem(
+        keyName = "smoothEntrance",
+        name = "Smooth entrance",
+        description = "Slide and scale Enhanced popups into view with a short item reveal",
+        position = 10,
+        section = behaviourSection
+    )
+    default boolean smoothEntrance()
     {
         return true;
     }
@@ -490,6 +652,193 @@ public interface LootPopConfig extends Config
     }
 
     @ConfigItem(
+        keyName = "enableDropRarity",
+        name = "Drop rarity system",
+        description = "Classify items independently from GP value using bundled OSRS Wiki drop rates",
+        position = 0,
+        section = dropRaritySection
+    )
+    default boolean enableDropRarity()
+    {
+        return true;
+    }
+
+    @Range(min = 2, max = 1_000_000)
+    @ConfigItem(
+        keyName = "uncommonRate",
+        name = "Uncommon from 1 in",
+        description = "Minimum one-in rate classified as Uncommon",
+        position = 1,
+        section = dropRaritySection
+    )
+    default int uncommonRate()
+    {
+        return 128;
+    }
+
+    @Range(min = 2, max = 1_000_000)
+    @ConfigItem(
+        keyName = "rareRate",
+        name = "Rare from 1 in",
+        description = "Minimum one-in rate classified as Rare",
+        position = 2,
+        section = dropRaritySection
+    )
+    default int rareRate()
+    {
+        return 512;
+    }
+
+    @Range(min = 2, max = 1_000_000)
+    @ConfigItem(
+        keyName = "veryRareRate",
+        name = "Very rare from 1 in",
+        description = "Minimum one-in rate classified as Very rare",
+        position = 3,
+        section = dropRaritySection
+    )
+    default int veryRareRate()
+    {
+        return 2_000;
+    }
+
+    @Range(min = 2, max = 1_000_000)
+    @ConfigItem(
+        keyName = "ultraRareRate",
+        name = "Ultra rare from 1 in",
+        description = "Minimum one-in rate classified as Ultra rare",
+        position = 4,
+        section = dropRaritySection
+    )
+    default int ultraRareRate()
+    {
+        return 5_000;
+    }
+
+    @Range(min = 2, max = 1_000_000)
+    @ConfigItem(
+        keyName = "luckyDropRate",
+        name = "Lucky badge from 1 in",
+        description = "Show the lucky marker when a popup contains an item at least this rare",
+        position = 5,
+        section = dropRaritySection
+    )
+    default int luckyDropRate()
+    {
+        return 1_000;
+    }
+
+    @ConfigItem(
+        keyName = "showLuckyIndicator",
+        name = "Lucky drop marker",
+        description = "Show a small rarity-coloured star for lucky drops",
+        position = 6,
+        section = dropRaritySection
+    )
+    default boolean showLuckyIndicator()
+    {
+        return true;
+    }
+
+    @ConfigItem(
+        keyName = "itemSpotlights",
+        name = "Ultra-rare item glow",
+        description = "Show a powerful animated glow behind Ultra rare items in Enhanced mode",
+        position = 7,
+        section = dropRaritySection
+    )
+    default boolean itemSpotlights()
+    {
+        return true;
+    }
+
+    @ConfigItem(
+        keyName = "rarityPalette",
+        name = "Rarity palette",
+        description = "Choose the default or colourblind-safe rarity colours",
+        position = 0,
+        section = accessibilitySection
+    )
+    default RarityPalette rarityPalette()
+    {
+        return RarityPalette.DEFAULT;
+    }
+
+    @ConfigItem(
+        keyName = "reduceMotion",
+        name = "Reduce motion",
+        description = "Keep glass, gradients and static rarity cues but disable animated tier effects",
+        position = 1,
+        section = accessibilitySection
+    )
+    default boolean reduceMotion()
+    {
+        return false;
+    }
+
+    @ConfigItem(
+        keyName = "highContrastText",
+        name = "High contrast text",
+        description = "Use stronger text outlines for readability",
+        position = 2,
+        section = accessibilitySection
+    )
+    default boolean highContrastText()
+    {
+        return false;
+    }
+
+    @ConfigItem(
+        keyName = "automaticScreenshots",
+        name = "Automatic screenshots",
+        description = "Save a local RuneLite screenshot when a drop meets either threshold below",
+        position = 0,
+        section = screenshotsSection
+    )
+    default boolean automaticScreenshots()
+    {
+        return false;
+    }
+
+    @ConfigItem(
+        keyName = "screenshotRarity",
+        name = "Rarity threshold",
+        description = "Minimum known Wiki rarity that triggers a screenshot",
+        position = 1,
+        section = screenshotsSection
+    )
+    default ScreenshotRarity screenshotRarity()
+    {
+        return ScreenshotRarity.ULTRA_RARE;
+    }
+
+    @Range(min = 0, max = 2_000_000_000)
+    @ConfigItem(
+        keyName = "screenshotMinimumValue",
+        name = "Value threshold",
+        description = "Total GP value that triggers a screenshot; zero uses rarity only",
+        position = 2,
+        section = screenshotsSection
+    )
+    default int screenshotMinimumValue()
+    {
+        return 100_000_000;
+    }
+
+    @Range(min = 5, max = 50)
+    @ConfigItem(
+        keyName = "historySize",
+        name = "Recent loot entries",
+        description = "Maximum number of drops retained in the in-memory side-panel history",
+        position = 0,
+        section = sidePanelSection
+    )
+    default int historySize()
+    {
+        return 20;
+    }
+
+    @ConfigItem(
         keyName = "lowValueEffects",
         name = "Low — floating motes",
         description = "Show calm floating particles on low-value drops",
@@ -600,10 +949,22 @@ public interface LootPopConfig extends Config
     }
 
     @ConfigItem(
+        keyName = "testScenario",
+        name = "Test scenario",
+        description = "Preview one popup, three separate kills, many items with overflow, or a Collection Log unlock",
+        position = 3,
+        section = soundTestingSection
+    )
+    default TestScenario testScenario()
+    {
+        return TestScenario.SINGLE_POPUP;
+    }
+
+    @ConfigItem(
         keyName = "showTestPopup",
         name = "Show test popup",
         description = "Show a preview popup immediately; this switch resets itself",
-        position = 3,
+        position = 4,
         section = soundTestingSection
     )
     default boolean showTestPopup()

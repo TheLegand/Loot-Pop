@@ -1,0 +1,111 @@
+name: Weekly Wiki drop data
+
+on:
+  schedule:
+    # OSRS updates are normally Wednesday mornings. Run the following Thursday
+    # after the Wiki has had time to publish the updated structured tables.
+    - cron: "0 6 * * 4"
+  workflow_dispatch:
+
+concurrency:
+  group: weekly-wiki-drop-data
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    name: Refresh bundled drop rates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate current Wiki data
+        run: python tools/crawl_bucket.py generate --max-age 0
+
+      - name: Detect data changes
+        id: changes
+        shell: bash
+        run: |
+          if git diff --quiet -- \
+            src/main/resources/droprates_clean.json \
+            src/main/resources/rare_drop_table.json \
+            src/main/resources/npc_versions.json \
+            src/main/resources/rdt_quantities.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Java
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+
+      - name: Test the refreshed data
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          chmod +x gradlew
+          ./gradlew clean test --no-daemon
+
+      - name: Open or update the weekly data pull request
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPDATE_BRANCH: automation/wiki-drop-data
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$UPDATE_BRANCH"
+          git add \
+            src/main/resources/droprates_clean.json \
+            src/main/resources/rare_drop_table.json \
+            src/main/resources/npc_versions.json \
+            src/main/resources/rdt_quantities.json
+          git commit -m "chore: refresh OSRS Wiki drop data"
+          git push --force origin "HEAD:$UPDATE_BRANCH"
+
+          existing_pr=$(gh pr list \
+            --head "$UPDATE_BRANCH" \
+            --base main \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')
+
+          body=$(cat <<'EOF'
+          Automated weekly refresh of Loot Pop's bundled OSRS Wiki drop-rate data.
+
+          - Runs after the usual Wednesday OSRS update
+          - Keeps the RuneLite plugin fully offline at runtime
+          - Sends no player, account, loot, location, or IP data from the client
+          - Opens a reviewable PR only when the structured Wiki data changes
+          - Gradle tests passed before this PR was created
+
+          Data source and licensing are documented in `THIRD_PARTY_NOTICES.md`.
+          EOF
+          )
+
+          if [ -n "$existing_pr" ]; then
+            gh pr edit "$existing_pr" \
+              --title "chore: refresh OSRS Wiki drop data" \
+              --body "$body"
+          else
+            gh pr create \
+              --base main \
+              --head "$UPDATE_BRANCH" \
+              --title "chore: refresh OSRS Wiki drop data" \
+              --body "$body"
+          fi

@@ -9,14 +9,17 @@ final class LootNotification
     private final String sourceName;
     private final List<LootDisplayItem> items;
     private final long totalValue;
-    private final long createdAtMillis;
+    private long visibleAtMillis;
+    private long pausedAtMillis = -1L;
+    private long pausedDurationMillis;
+    private boolean collectionLogUnlock;
 
     LootNotification(String sourceName, List<LootDisplayItem> items, long totalValue, long createdAtMillis)
     {
         this.sourceName = sourceName;
         this.items = Collections.unmodifiableList(new ArrayList<>(items));
         this.totalValue = totalValue;
-        this.createdAtMillis = createdAtMillis;
+        this.visibleAtMillis = createdAtMillis;
     }
 
     String getSourceName()
@@ -34,9 +37,40 @@ final class LootNotification
         return totalValue;
     }
 
+    boolean isCollectionLogUnlock()
+    {
+        return collectionLogUnlock;
+    }
+
+    void setCollectionLogUnlock(boolean collectionLogUnlock)
+    {
+        this.collectionLogUnlock = collectionLogUnlock;
+    }
+
     long getAgeMillis(long nowMillis)
     {
-        return Math.max(0L, nowMillis - createdAtMillis);
+        long effectiveNow = pausedAtMillis >= 0L ? pausedAtMillis : nowMillis;
+        return Math.max(0L, effectiveNow - visibleAtMillis - pausedDurationMillis);
+    }
+
+    void setHovered(boolean hovered, long nowMillis)
+    {
+        if (hovered && pausedAtMillis < 0L)
+        {
+            pausedAtMillis = nowMillis;
+        }
+        else if (!hovered && pausedAtMillis >= 0L)
+        {
+            pausedDurationMillis += Math.max(0L, nowMillis - pausedAtMillis);
+            pausedAtMillis = -1L;
+        }
+    }
+
+    void restartAt(long nowMillis)
+    {
+        visibleAtMillis = nowMillis;
+        pausedAtMillis = -1L;
+        pausedDurationMillis = 0L;
     }
 
     float getAlpha(long nowMillis, int displayDuration, int fadeDuration)
@@ -58,6 +92,6 @@ final class LootNotification
 
     boolean isExpired(long nowMillis, int displayDuration, int fadeDuration)
     {
-        return nowMillis - createdAtMillis > (long) displayDuration + fadeDuration;
+        return getAgeMillis(nowMillis) > (long) displayDuration + fadeDuration;
     }
 }
