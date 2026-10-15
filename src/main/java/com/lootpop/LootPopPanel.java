@@ -33,6 +33,7 @@ import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.ui.PluginPanel;
+import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.LinkBrowser;
 
 final class LootPopPanel extends PluginPanel
@@ -625,19 +626,8 @@ final class LootPopPanel extends PluginPanel
 
     static BufferedImage createNavigationIcon()
     {
-        BufferedImage image = new BufferedImage(32, 32, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = image.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setColor(new Color(255, 77, 94, 55));
-        g.fillOval(2, 2, 28, 28);
-        g.setColor(new Color(255, 77, 94));
-        g.fillRoundRect(6, 17, 20, 10, 4, 4);
-        g.setColor(new Color(26, 28, 31));
-        g.fillRoundRect(8, 19, 16, 6, 3, 3);
-        g.setColor(Color.WHITE);
-        g.fillPolygon(new int[] {16, 19, 17, 16, 15, 13}, new int[] {4, 10, 10, 16, 10, 10}, 6);
-        g.dispose();
-        return image;
+        BufferedImage brandIcon = ImageUtil.loadImageResource(LootPopPanel.class, "/loot-pop-nav.png");
+        return ImageUtil.resizeImage(brandIcon, 32, 32);
     }
 
     private static class RoundedPanel extends JPanel
