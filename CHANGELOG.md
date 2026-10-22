@@ -4,24 +4,25 @@
 
 Changes since 1.2.0.
 
+### Loot popups and reveals
+
+- Added Sealed Drop reveals in Enhanced mode. Eligible rare items reveal one at a time before the rest of the loot appears.
+- Added a gold reveal for confirmed new Collection Log unlocks, even when the item itself is common.
+- Reveal rarity and speed are configurable, and clicking skips the animation. Performance mode stays instant; Reduce Motion uses brief fades.
+- Popup reading time now starts after the reveal finishes. Item names, values and hover details stay hidden until their reward is revealed.
+- Added per-source personal bests, with an optional NEW BEST banner when a drop beats a previous record.
+
 ### Keep more of your loot history
 
 - Added a Loot Journal that saves observed drops locally, with a separate history for each character. Browse by date, filter by source, or switch to Moments and Records to find the highlights.
 - Choose Separate to see each drop on its own, or Grouped to combine the items recorded on a given day. Grouping only changes the Journal view; live popups still show each drop separately.
 - Added a Trophy Shelf for source bests, Ultra rare drops and new Collection Log unlocks. It has its own storage limit, so highlights can stay after ordinary history expires.
-- Added personal bests for each source, with an optional NEW BEST banner when a drop beats a previous record.
 
 ### Look back at a session or source
 
 - Added Session Recap with your session total, best drop, top item, rarest known drop and Collection Log highlights. It keeps those highlights even after drops leave the Recent Loot list.
 - Added Source Profiles. Click a source name to see its saved observations, recorded value, best drop and recent highlights.
 - GE and HA summaries stay separate. Journal values are kept as recorded rather than recalculated at today's prices.
-
-### Give rare rewards their moment
-
-- Added Sealed Drop reveals in Enhanced mode. Eligible rare items reveal one at a time before the rest of the loot appears, with a gold treatment for confirmed new Collection Log unlocks.
-- Reveal rarity and speed are configurable, and clicking skips the animation. Performance mode stays instant; Reduce Motion uses brief fades.
-- Popup reading time now starts after the reveal finishes. Item names, values and hover details stay hidden until their reward is revealed.
 
 ### Everyday improvements and fixes
 

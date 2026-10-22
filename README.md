@@ -16,123 +16,6 @@
   <img src="https://img.shields.io/badge/license-BSD--2--Clause-8b5cf6" alt="BSD 2-Clause license">
 </p>
 
-## Pick your experience
-
-Loot Pop includes two complete experience modes. Both retain the essential loot information; only the presentation cost changes.
-
-| | **Performance** | **Enhanced** |
-| --- | --- | --- |
-| Best for | Maximum FPS and low visual noise | Full presentation and rare-drop excitement |
-| Compact loot popups | Yes | Yes |
-| Combined item stacks and coloured `xN` labels | Yes | Yes |
-| Value tiers and item hover details | Yes | Yes |
-| Wiki drop chance and rarity tiers | Yes | Yes |
-| Glass treatment and item glows | No | Yes |
-| Animated tier particles | No | Yes |
-| High, Insane and Legendary sound cues | No | Yes |
-
-**Performance** keeps the lightweight behaviour of the original release while retaining every core usability feature. **Enhanced** adds glass, colour-reactive lighting, particles, item glows and layered rare-drop sounds. Change modes at any time from the plugin settings.
-
-## New in 1.3.0
-
-Keep your drops beyond the current session, revisit the highlights, and give rare rewards a little more room to shine.
-
-- **Loot Journal:** saved, per-character history with date navigation, source filters and Separate or Grouped views.
-- **Trophy Shelf:** a separate home for source bests, Ultra rare drops and new Collection Log unlocks.
-- **Session Recap:** your total, best drop, top item and other highlights in one place.
-- **Source Profiles:** open a source name to explore its saved drops and records.
-- **Sealed Drop:** optional rare-item reveals in Enhanced mode, with a special treatment for new Collection Log unlocks.
-- **Sidebar improvements:** clearer text, scrollable history, right-click actions and a safer Session Reset.
-
-See the [1.3.0 changelog](CHANGELOG.md#130) for the full changes since 1.2.0.
-
-## Your loot, saved locally
-
-Open **Journal** to browse recorded drops by date. Use **Filters** to choose a source, price mode or view, or jump straight to a saved date. Dates open independently, so you can compare several days without losing your place.
-
-**Separate** keeps each drop in its own card. **Grouped** combines items within each date using the current filters and their recorded values. It does not merge live popups or reprice old drops. GE and HA observations stay separate.
-
-The Journal also includes **Moments**, **Records** and a **Trophy Shelf**. Trophies have a separate storage limit and no age expiry; when the shelf fills up, the oldest trophies leave first. A better source best replaces the previous best-only trophy, while rare drops and Collection Log unlocks can remain.
-
-Saving is enabled by default, with up to **2,000 drops / 90 days** of ordinary history and **500 trophies**. Change these limits in Loot Journal settings. Only observed drops are recorded—not every kill, loot from before installation or another plugin's history.
-
-<table>
-  <tr>
-    <th>Separate</th>
-    <th>Grouped</th>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screenshots/v1.3.0/journal-separate.png" width="235" alt="Journal in Separate view, showing individual Goblin drops under an expandable date"></td>
-    <td align="center"><img src="docs/screenshots/v1.3.0/journal-grouped.png" width="235" alt="Journal in Grouped view, showing combined item quantities and recorded totals for two open dates"></td>
-  </tr>
-  <tr>
-    <td align="center">Browse each drop with its recorded value and time.</td>
-    <td align="center">See a day's items and quantities together.</td>
-  </tr>
-</table>
-
-## Session and source highlights
-
-Choose **Session recap** for an overview across the current session's sources, including the best fully priced drop, most valuable item stack, rarest known drop and Collection Log highlights. Highlights remain available after entries leave Recent Loot. Session time includes idle time; it is not an active-play timer.
-
-Click a source name for its **Source Profile**, based on retained Journal observations and trophies. Both pages let you switch between GE and HA without combining them. These are recorded loot totals, not all-time kill counts or net profit.
-
-**Session Reset** clears the current session and recap, not the saved Journal. Changing characters or restarting the plugin also starts a new recap. Clearing the Journal is a separate, confirmed action and includes its trophies and records.
-
-<table>
-  <tr>
-    <th>Session</th>
-    <th>Session Recap</th>
-    <th>Source Profile</th>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screenshots/v1.3.0/session.png" width="235" alt="Session sidebar with a centered loot total, drop count, average, best value and recent loot"></td>
-    <td align="center"><img src="docs/screenshots/v1.3.0/session-recap.png" width="235" alt="Session Recap with the best drop, top item and rarest known drop from a Goblin session"></td>
-    <td align="center"><img src="docs/screenshots/v1.3.0/source-profile.png" width="235" alt="Goblin Source Profile with saved loot value, best saved drop, top item, rarest known drop and recent moments"></td>
-  </tr>
-  <tr>
-    <td align="center">A quick overview while you play.</td>
-    <td align="center">The session's highlights in one place.</td>
-    <td align="center">Saved observations for one source.</td>
-  </tr>
-</table>
-
-## Sealed Drop reveals
-
-In **Enhanced** mode, Sealed Drop reveals eligible rare items before showing the rest of the loot. Confirmed new Collection Log unlocks receive a gold reveal, even when the item itself is common.
-
-Choose the minimum rarity and reveal speed in **Sealed Drop** settings, or use the sidebar gear for a quick toggle. Click a reveal to skip it. Performance mode remains instant, and Reduce Motion uses brief fades. The popup's reading time begins after the reveal finishes.
-
-To preview it, open **Sound & testing**, choose **Sealed Drop: two rare items** or **Collection Log: common item**, and enable **Show test popup**. Test drops do not enter your real Journal.
-
-<p align="center">
-  <img src="docs/demos/sealed-drop-v1.3.gif" width="468" alt="Sealed Drop demo: sealed rewards reveal in sequence, then settle into the normal loot popup">
-</p>
-
-<p align="center"><em>Recorded with the built-in test scenario; items, chances and values are simulated.</em></p>
-
-<details>
-  <summary>Sealed Drop and Collection Log screenshots</summary>
-
-<table>
-  <tr>
-    <th>Sealed reward</th>
-    <th>New Collection Log slot</th>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screenshots/v1.3.0/sealed-drop.png" width="350" alt="Sealed Drop test popup with an unrevealed item silhouette and question mark"></td>
-    <td align="center"><img src="docs/screenshots/v1.3.0/collection-log-reveal.png" width="350" alt="Test reveal showing a Twisted bow and the New Collection Log Slot message"></td>
-  </tr>
-</table>
-
-</details>
-
-## When a price is missing
-
-A missing GE quote is not counted as zero or replaced with an HA price. Partly priced drops show a known subtotal such as `100K+ gp`; drops with no known total show **Price pending**. Incomplete drops cannot set personal bests, and incomplete session averages are withheld.
-
-The Journal keeps the values and missing-price state observed at drop time rather than filling old entries with later market prices.
-
 ## Three distinct popup styles
 
 Every layout supports both **Solid** and **Transparent** backgrounds, configurable opacity, value colours and scaling.
@@ -185,6 +68,119 @@ Enhanced mode gives each value tier its own visual language. Thresholds, colours
 </table>
 
 Legendary drops break beyond the popup frame with a crimson light pillar, energy rain, crown star, rotating rays, shockwaves and an impact burst. Every tier effect is enabled by default and can be disabled separately.
+
+## Pick your experience
+
+Loot Pop includes two complete experience modes. Both retain the essential loot information; only the presentation cost changes.
+
+| | **Performance** | **Enhanced** |
+| --- | --- | --- |
+| Best for | Maximum FPS and low visual noise | Full presentation and rare-drop excitement |
+| Compact loot popups | Yes | Yes |
+| Combined item stacks and coloured `xN` labels | Yes | Yes |
+| Value tiers and item hover details | Yes | Yes |
+| Wiki drop chance and rarity tiers | Yes | Yes |
+| Glass treatment and item glows | No | Yes |
+| Animated tier particles | No | Yes |
+| High, Insane and Legendary sound cues | No | Yes |
+
+**Performance** keeps the lightweight behaviour of the original release while retaining every core usability feature. **Enhanced** adds glass, colour-reactive lighting, particles, item glows and layered rare-drop sounds. Change modes at any time from the plugin settings.
+
+## Sealed Drop reveals
+
+In **Enhanced** mode, Sealed Drop reveals eligible rare items before showing the rest of the loot. Confirmed new Collection Log unlocks receive a gold reveal, even when the item itself is common.
+
+Choose the minimum rarity and reveal speed in **Sealed Drop** settings, or use the sidebar gear for a quick toggle. Click a reveal to skip it. Performance mode remains instant, and Reduce Motion uses brief fades. The popup's reading time begins after the reveal finishes.
+
+To preview it, open **Sound & testing**, choose **Sealed Drop: two rare items** or **Collection Log: common item**, and enable **Show test popup**. Test drops do not enter your real Journal.
+
+<p align="center">
+  <img src="docs/demos/sealed-drop-v1.3.gif" width="468" alt="Sealed Drop demo: sealed rewards reveal in sequence, then settle into the normal loot popup">
+</p>
+
+<p align="center"><em>Recorded with the built-in test scenario; items, chances and values are simulated.</em></p>
+
+<table>
+  <tr>
+    <th>Sealed reward</th>
+    <th>New Collection Log slot</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/v1.3.0/sealed-drop.png" width="350" alt="Sealed Drop test popup with an unrevealed item silhouette and question mark"></td>
+    <td align="center"><img src="docs/screenshots/v1.3.0/collection-log-reveal.png" width="350" alt="Test reveal showing a Twisted bow and the New Collection Log Slot message"></td>
+  </tr>
+</table>
+
+## New in 1.3.0
+
+Rare rewards now have their own reveal. This update also adds saved loot history and new ways to look back at a session.
+
+- **Sealed Drop:** optional rare-item reveals in Enhanced mode, with a special treatment for new Collection Log unlocks.
+- **Collection Log reveals:** a dedicated reveal for confirmed new unlocks, including common items.
+- **Loot Journal:** saved, per-character history with date navigation, source filters and Separate or Grouped views.
+- **Trophy Shelf:** a separate home for source bests, Ultra rare drops and new Collection Log unlocks.
+- **Session Recap:** your total, best drop, top item and other highlights in one place.
+- **Source Profiles:** open a source name to explore its saved drops and records.
+- **Sidebar improvements:** clearer text, scrollable history, right-click actions and a safer Session Reset.
+
+See the [1.3.0 changelog](CHANGELOG.md#130) for the full changes since 1.2.0.
+
+## Session and source highlights
+
+Choose **Session recap** for an overview across the current session's sources, including the best fully priced drop, most valuable item stack, rarest known drop and Collection Log highlights. Highlights remain available after entries leave Recent Loot. Session time includes idle time; it is not an active-play timer.
+
+Click a source name for its **Source Profile**, based on retained Journal observations and trophies. Both pages let you switch between GE and HA without combining them. These are recorded loot totals, not all-time kill counts or net profit.
+
+**Session Reset** clears the current session and recap, not the saved Journal. Changing characters or restarting the plugin also starts a new recap. Clearing the Journal is a separate, confirmed action and includes its trophies and records.
+
+<table>
+  <tr>
+    <th>Session</th>
+    <th>Session Recap</th>
+    <th>Source Profile</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/v1.3.0/session.png" width="235" alt="Session sidebar with a centered loot total, drop count, average, best value and recent loot"></td>
+    <td align="center"><img src="docs/screenshots/v1.3.0/session-recap.png" width="235" alt="Session Recap with the best drop, top item and rarest known drop from a Goblin session"></td>
+    <td align="center"><img src="docs/screenshots/v1.3.0/source-profile.png" width="235" alt="Goblin Source Profile with saved loot value, best saved drop, top item, rarest known drop and recent moments"></td>
+  </tr>
+  <tr>
+    <td align="center">A quick overview while you play.</td>
+    <td align="center">The session's highlights in one place.</td>
+    <td align="center">Saved observations for one source.</td>
+  </tr>
+</table>
+
+## Your loot, saved locally
+
+Open **Journal** to browse recorded drops by date. Use **Filters** to choose a source, price mode or view, or jump straight to a saved date. Dates open independently, so you can compare several days without losing your place.
+
+**Separate** keeps each drop in its own card. **Grouped** combines items within each date using the current filters and their recorded values. It does not merge live popups or reprice old drops. GE and HA observations stay separate.
+
+The Journal also includes **Moments**, **Records** and a **Trophy Shelf**. Trophies have a separate storage limit and no age expiry; when the shelf fills up, the oldest trophies leave first. A better source best replaces the previous best-only trophy, while rare drops and Collection Log unlocks can remain.
+
+Saving is enabled by default, with up to **2,000 drops / 90 days** of ordinary history and **500 trophies**. Change these limits in Loot Journal settings. Only observed drops are recorded—not every kill, loot from before installation or another plugin's history.
+
+<table>
+  <tr>
+    <th>Separate</th>
+    <th>Grouped</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/v1.3.0/journal-separate.png" width="235" alt="Journal in Separate view, showing individual Goblin drops under an expandable date"></td>
+    <td align="center"><img src="docs/screenshots/v1.3.0/journal-grouped.png" width="235" alt="Journal in Grouped view, showing combined item quantities and recorded totals for two open dates"></td>
+  </tr>
+  <tr>
+    <td align="center">Browse each drop with its recorded value and time.</td>
+    <td align="center">See a day's items and quantities together.</td>
+  </tr>
+</table>
+
+## When a price is missing
+
+A missing GE quote is not counted as zero or replaced with an HA price. Partly priced drops show a known subtotal such as `100K+ gp`; drops with no known total show **Price pending**. Incomplete drops cannot set personal bests, and incomplete session averages are withheld.
+
+The Journal keeps the values and missing-price state observed at drop time rather than filling old entries with later market prices.
 
 ## Highlights
 
