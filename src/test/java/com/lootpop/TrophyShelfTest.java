@@ -75,7 +75,7 @@ public class TrophyShelfTest
         LootHistoryEntry entry = new LootHistoryEntry("Boss", 0, now - 100 * 86400000L,
             DropRarity.ULTRA_RARE, Collections.singletonList(relic));
         entry.setCollectionLogUnlock(true); journal.record(entry, 100, 1, now);
-        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath()); store.save("A", journal);
+        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath(), new com.google.gson.Gson()); store.save("A", journal);
         LootJournal loaded = store.load("A"); assertTrue(loaded.snapshot().isEmpty());
         LootHistoryEntry trophy = loaded.trophySnapshot().get(0);
         assertEquals(entry.getId(), trophy.getId()); assertTrue(trophy.hasPendingPrices());
@@ -88,14 +88,14 @@ public class TrophyShelfTest
     {
         LootJournal journal = new LootJournal(); long now = System.currentTimeMillis();
         journal.record(drop("Boss", 1000, now, DropRarity.ULTRA_RARE), 100, 90, now);
-        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath()); store.save("A", journal);
+        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath(), new com.google.gson.Gson()); store.save("A", journal);
         LootJournal loaded = store.load("A"); assertSame(loaded.snapshot().get(0), loaded.trophySnapshot().get(0));
     }
 
     @Test
     public void legacyJournalIsReadWithoutLosingHistoryAndCreatesShelfFromAvailableMetadata() throws Exception
     {
-        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath());
+        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath(), new com.google.gson.Gson());
         LootJournal journal = new LootJournal(); long now = System.currentTimeMillis();
         journal.record(drop("Boss", 1000, now, DropRarity.ULTRA_RARE), 100, 90, now);
         store.save("A", journal);

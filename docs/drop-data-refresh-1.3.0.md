@@ -23,6 +23,6 @@ The [Fractured Archive chest page](https://oldschool.runescape.wiki/w/Chest_(The
 
 ## Validation
 
-The generator validated the refreshed rate strings. Four added regression tests cover newly listed drops, NPC-specific variants, fractional rare-table rolls and removal of obsolete rates. All 128 automated tests pass, and the 1.3.0 JAR builds successfully. No runtime network requests or image downloads were added.
+The generator validated the refreshed rate strings. Four added regression tests cover newly listed drops, NPC-specific variants, fractional rare-table rolls and removal of obsolete rates. All 129 automated tests pass, including a Journal Gson-configuration compatibility test, and the 1.3.0 JAR builds successfully. No runtime network requests or image downloads were added.
 
 The detailed pre-update comparison and raw download cache are local build artifacts under `build/` and are not part of the plugin JAR.

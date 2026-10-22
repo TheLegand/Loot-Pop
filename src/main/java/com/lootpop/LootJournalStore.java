@@ -1,7 +1,7 @@
 package com.lootpop;
 
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import com.google.gson.FieldNamingPolicy;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -18,10 +18,15 @@ import java.util.LinkedHashMap;
 /** Only item metadata is stored. No sprites, login names, credentials or network requests. */
 final class LootJournalStore
 {
-    private static final Gson GSON = new GsonBuilder().create();
     private final Path directory;
+    private final Gson gson;
 
-    LootJournalStore(Path directory) { this.directory = directory; }
+    LootJournalStore(Path directory, Gson clientGson)
+    {
+        this.directory = directory;
+        // Keep the on-disk field names stable while inheriting RuneLite's Gson configuration.
+        this.gson = clientGson.newBuilder().setFieldNamingPolicy(FieldNamingPolicy.IDENTITY).create();
+    }
 
     Path fileFor(String profile)
     {
@@ -42,7 +47,7 @@ final class LootJournalStore
         if (Files.size(file) > 16 * 1024 * 1024) { throw new IOException("Journal exceeds the safe read limit"); }
         try
         {
-            Data data = GSON.fromJson(Files.readString(file, StandardCharsets.UTF_8), Data.class);
+            Data data = gson.fromJson(Files.readString(file, StandardCharsets.UTF_8), Data.class);
             if (data == null || (data.version != 1 && data.version != 2) || data.entries == null || data.bests == null
                 || data.entries.size() > 7000 || data.bests.size() > 4096)
             { throw new IOException("Unsupported journal format"); }
@@ -149,7 +154,7 @@ final class LootJournalStore
         Path temporary = Files.createTempFile(directory, "journal-", ".tmp");
         try
         {
-            Files.writeString(temporary, GSON.toJson(data), StandardCharsets.UTF_8);
+            Files.writeString(temporary, gson.toJson(data), StandardCharsets.UTF_8);
             if (Files.size(temporary) > 16 * 1024 * 1024) { throw new IOException("Journal exceeds storage limit"); }
             if (Files.exists(file))
             {

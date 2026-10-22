@@ -1,5 +1,6 @@
 package com.lootpop;
 
+import com.google.gson.Gson;
 import com.google.inject.Provides;
 import java.awt.Color;
 import java.awt.event.MouseEvent;
@@ -47,8 +48,8 @@ import net.runelite.http.api.loottracker.LootRecordType;
 
 @PluginDescriptor(
     name = "Loot Pop",
-    description = "Shows polished loot popups with drop rarity, hover details and value-tier effects",
-    tags = {"loot", "drop", "popup", "hud", "overlay", "price", "rare"}
+    description = "Compact loot popups, rare-item reveals and a local loot journal with session and source highlights",
+    tags = {"loot", "drop", "popup", "hud", "overlay", "price", "rare", "journal"}
 )
 public class LootPopPlugin extends Plugin
 {
@@ -70,6 +71,9 @@ public class LootPopPlugin extends Plugin
 
     @Inject
     private ConfigManager configManager;
+
+    @Inject
+    private Gson gson;
 
     @Inject
     private Client client;
@@ -135,7 +139,7 @@ public class LootPopPlugin extends Plugin
     protected void startUp()
     {
         migrateLegacyLegendaryColour();
-        journal = new LootJournalService(new LootJournalStore(RuneLite.RUNELITE_DIR.toPath().resolve("loot-pop-journal")),
+        journal = new LootJournalService(new LootJournalStore(RuneLite.RUNELITE_DIR.toPath().resolve("loot-pop-journal"), gson),
             this::refreshSidePanel, config::journalLimit, config::journalDays, journalExecutor, config::trophyLimit);
         switchJournalProfile();
         overlayManager.add(overlay);
