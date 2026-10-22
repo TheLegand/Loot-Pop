@@ -4,6 +4,10 @@ import java.awt.image.BufferedImage;
 
 final class LootHistoryItem
 {
+    private int itemId = -1;
+    private boolean pricePending;
+    private boolean gePending;
+    private volatile boolean collectionLog;
     private final int quantity;
     private final String name;
     private final long gePrice;
@@ -38,6 +42,15 @@ final class LootHistoryItem
     {
         return quantity;
     }
+
+    int getItemId() { return itemId; }
+    LootHistoryItem withItemId(int id) { itemId = id; return this; }
+    LootHistoryItem withPriceState(boolean pending, boolean marketPending)
+    { pricePending = pending; gePending = marketPending; return this; }
+    boolean isPricePending() { return pricePending; }
+    boolean isGePending() { return gePending; }
+    boolean isCollectionLogItem() { return collectionLog; }
+    void setCollectionLogItem(boolean unlocked) { collectionLog = unlocked; }
 
     String getName()
     {

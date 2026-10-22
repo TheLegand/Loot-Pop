@@ -49,9 +49,39 @@ public interface LootPopConfig extends Config
     String dropRaritySection = "dropRarity";
 
     @ConfigSection(
+        name = "Sealed Drop",
+        description = "Reveal rare rewards before showing the rest of the loot",
+        position = 5,
+        closedByDefault = true
+    )
+    String sealedDropSection = "sealedDrop";
+
+    @ConfigItem(keyName = "sealedDrops", name = "Sealed Drop", position = 0,
+        description = "Reveal rare items in Enhanced mode; click the reveal to skip",
+        section = sealedDropSection)
+    default boolean sealedDrops() { return true; }
+
+    @Range(min = 2, max = 1_000_000)
+    @ConfigItem(keyName = "sealedDropRate", name = "Reveal from 1 in", position = 1,
+        description = "Only items with a known drop chance at least this rare get a reveal",
+        section = sealedDropSection)
+    default int sealedDropRate() { return 1_000; }
+
+    @ConfigItem(keyName = "collectionLogReveals", name = "New Collection Log reveals", position = 2,
+        description = "Give a confirmed new Collection Log item its own reveal, even at a common drop rate",
+        section = sealedDropSection)
+    default boolean collectionLogReveals() { return true; }
+
+    @Range(min = 50, max = 200)
+    @ConfigItem(keyName = "sealedDropSpeed", name = "Reveal speed (%)", position = 3,
+        description = "100 is normal; higher values reveal items faster",
+        section = sealedDropSection)
+    default int sealedDropSpeed() { return 100; }
+
+    @ConfigSection(
         name = "Hover details",
         description = "Choose the information shown while hovering an item",
-        position = 5,
+        position = 6,
         closedByDefault = true
     )
     String hoverDetailsSection = "hoverDetails";
@@ -59,7 +89,7 @@ public interface LootPopConfig extends Config
     @ConfigSection(
         name = "Colours",
         description = "Popup colours",
-        position = 8,
+        position = 9,
         closedByDefault = true
     )
     String coloursSection = "colours";
@@ -67,14 +97,14 @@ public interface LootPopConfig extends Config
     @ConfigSection(
         name = "Tier effects",
         description = "Choose animated effects for each value tier",
-        position = 6
+        position = 7
     )
     String tierEffectsSection = "tierEffects";
 
     @ConfigSection(
         name = "Sound & testing",
         description = "Rare-drop sounds and instant popup previews",
-        position = 9,
+        position = 10,
         closedByDefault = true
     )
     String soundTestingSection = "soundTesting";
@@ -82,7 +112,7 @@ public interface LootPopConfig extends Config
     @ConfigSection(
         name = "Accessibility",
         description = "Motion, contrast and colour accessibility",
-        position = 7,
+        position = 8,
         closedByDefault = true
     )
     String accessibilitySection = "accessibility";
@@ -90,7 +120,7 @@ public interface LootPopConfig extends Config
     @ConfigSection(
         name = "Rare screenshots",
         description = "Optional local screenshots for valuable or rare drops",
-        position = 10,
+        position = 11,
         closedByDefault = true
     )
     String screenshotsSection = "screenshots";
@@ -98,10 +128,46 @@ public interface LootPopConfig extends Config
     @ConfigSection(
         name = "Side panel",
         description = "Recent loot and session summary controls",
-        position = 11,
+        position = 12,
         closedByDefault = true
     )
     String sidePanelSection = "sidePanel";
+
+    @ConfigSection(name = "Loot Journal", description = "Local character history and personal records",
+        position = 13, closedByDefault = true)
+    String journalSection = "journal";
+
+    @ConfigItem(keyName = "savedLootHistory", name = "Save loot history", position = 0,
+        description = "Store observed drops on this device, separately per character. Disabling does not delete existing history.", section = journalSection)
+    default boolean savedLootHistory() { return true; }
+
+    @Range(min = 100, max = 5000)
+    @ConfigItem(keyName = "journalLimit", name = "Maximum saved drops", position = 1,
+        description = "Keep the most recent drops up to this limit; source bests are retained separately", section = journalSection)
+    default int journalLimit() { return 2000; }
+
+    @Range(min = 1, max = 365)
+    @ConfigItem(keyName = "journalDays", name = "History retention (days)", position = 2,
+        description = "Older history is pruned when the journal opens or receives a drop", section = journalSection)
+    default int journalDays() { return 90; }
+
+    @ConfigItem(keyName = "journalLayout", name = "Journal layout", position = 7,
+        description = "Show individual drops or combine recorded items within each day", section = journalSection)
+    default JournalLayout journalLayout() { return JournalLayout.INDIVIDUAL; }
+
+    @Range(min = 50, max = 2000)
+    @ConfigItem(keyName = "trophyLimit", name = "Maximum trophies", position = 5,
+        description = "Separate shelf for source bests, Ultra rare drops and new Collection Log unlocks. No age expiry; oldest trophies leave when full.", section = journalSection)
+    default int trophyLimit() { return 500; }
+
+    @ConfigItem(keyName = "personalBestPopups", name = "Personal best banner", position = 3,
+        description = "Celebrate beating a previous observed source record after the reveal. Requires saved history.", section = journalSection)
+    default boolean personalBestPopups() { return true; }
+
+    @Range(min = 0, max = 1000000000)
+    @ConfigItem(keyName = "personalBestMinimum", name = "Record celebration from (gp)", position = 4,
+        description = "Suppress popup celebrations below this value; the journal still tracks the record", section = journalSection)
+    default int personalBestMinimum() { return 100000; }
 
     @ConfigItem(
         keyName = "visualMode",

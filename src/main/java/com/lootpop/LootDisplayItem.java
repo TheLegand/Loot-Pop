@@ -12,6 +12,7 @@ final class LootDisplayItem
     private final long unitPrice;
     private final String dropRate;
     private final double dropRateOneIn;
+    private final boolean pricePending;
 
     LootDisplayItem(int itemId, int quantity, long unitPrice)
     {
@@ -25,12 +26,20 @@ final class LootDisplayItem
 
     LootDisplayItem(int itemId, int quantity, long unitPrice, String dropRate, double dropRateOneIn)
     {
+        this(itemId, quantity, unitPrice, dropRate, dropRateOneIn, false);
+    }
+
+    LootDisplayItem(int itemId, int quantity, long unitPrice, String dropRate, double dropRateOneIn, boolean pending)
+    {
         this.itemId = itemId;
         this.quantity = quantity;
-        this.unitPrice = unitPrice;
+        this.unitPrice = pending ? 0 : unitPrice;
         this.dropRate = dropRate;
         this.dropRateOneIn = dropRateOneIn;
+        this.pricePending = pending;
     }
+
+    boolean isPricePending() { return pricePending; }
 
     int getItemId()
     {
@@ -78,7 +87,8 @@ final class LootDisplayItem
             int quantity = (int) Math.min(Integer.MAX_VALUE, combinedQuantity);
             String dropRate = existing.dropRate != null ? existing.dropRate : item.dropRate;
             double oneIn = existing.dropRateOneIn > 0.0 ? existing.dropRateOneIn : item.dropRateOneIn;
-            merged.put(item.itemId, new LootDisplayItem(item.itemId, quantity, existing.unitPrice, dropRate, oneIn));
+            merged.put(item.itemId, new LootDisplayItem(item.itemId, quantity, existing.unitPrice, dropRate, oneIn,
+                existing.pricePending || item.pricePending));
         }
         return new ArrayList<>(merged.values());
     }

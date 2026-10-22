@@ -2,6 +2,7 @@ package com.lootpop;
 
 import com.google.inject.Provides;
 import java.awt.Color;
+import java.awt.event.MouseEvent;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -14,6 +15,7 @@ import java.util.Map;
 import javax.swing.SwingUtilities;
 import javax.inject.Inject;
 import net.runelite.api.Client;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.NPC;
 import net.runelite.api.NPCComposition;
@@ -26,8 +28,13 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.events.ServerNpcLoot;
+import net.runelite.client.events.RuneScapeProfileChanged;
+import net.runelite.client.events.ProfileChanged;
+import net.runelite.client.RuneLite;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStack;
+import net.runelite.client.input.MouseManager;
+import net.runelite.client.input.MouseAdapter;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.loottracker.LootReceived;
@@ -79,21 +86,44 @@ public class LootPopPlugin extends Plugin
     @Inject
     private ImageCapture imageCapture;
 
+    @Inject
+    private MouseManager mouseManager;
+
+    private final MouseAdapter revealMouseListener = new MouseAdapter()
+    {
+        @Override
+        public MouseEvent mousePressed(MouseEvent event)
+        {
+            if (event.getButton() == MouseEvent.BUTTON1 && !event.isAltDown() && !event.isControlDown()
+                && !event.isShiftDown() && !event.isMetaDown() && overlay.skipRevealAt(event.getX(), event.getY()))
+            {
+                event.consume();
+            }
+            return event;
+        }
+    };
+
     private final Deque<LootNotification> notifications = new ArrayDeque<>();
     private final Deque<LootNotification> queuedNotifications = new ArrayDeque<>();
     private final Deque<LootHistoryEntry> lootHistory = new ArrayDeque<>();
+    private final LootSessionRecap sessionRecap = new LootSessionRecap();
     private final Map<String, SessionAccumulator> sourceSessions = new LinkedHashMap<>();
     private String lastEventHash = "";
     private long lastEventAtMillis;
-    private long collectionLogPendingUntil;
+    private final Map<String, Long> pendingCollectionItems = new LinkedHashMap<>();
+    private final Deque<LootNotification> recentDrops = new ArrayDeque<>();
     private int sessionDrops;
+    private long sessionGeneration;
     private long sessionTotalValue;
+    private int sessionPendingDrops;
     private String sessionBestSource = "";
     private long sessionBestValue;
-    private LootNotification mostRecentLootNotification;
-    private long mostRecentLootAt;
     private LootPopPanel sidePanel;
     private NavigationButton navigationButton;
+    private volatile LootJournalService journal;
+    private String journalProfile;
+    @Inject
+    private java.util.concurrent.ScheduledExecutorService journalExecutor;
 
     @Provides
     LootPopConfig provideConfig(ConfigManager configManager)
@@ -105,7 +135,11 @@ public class LootPopPlugin extends Plugin
     protected void startUp()
     {
         migrateLegacyLegendaryColour();
+        journal = new LootJournalService(new LootJournalStore(RuneLite.RUNELITE_DIR.toPath().resolve("loot-pop-journal")),
+            this::refreshSidePanel, config::journalLimit, config::journalDays, journalExecutor, config::trophyLimit);
+        switchJournalProfile();
         overlayManager.add(overlay);
+        mouseManager.registerMouseListener(revealMouseListener);
         sidePanel = new LootPopPanel(this, config, configManager);
         navigationButton = NavigationButton.builder()
             .tooltip("Loot Pop")
@@ -137,25 +171,31 @@ public class LootPopPlugin extends Plugin
     protected synchronized void shutDown()
     {
         overlayManager.remove(overlay);
+        mouseManager.unregisterMouseListener(revealMouseListener);
+        overlay.clearRevealTargets();
         if (navigationButton != null)
         {
             clientToolbar.removeNavigation(navigationButton);
             navigationButton = null;
         }
         sidePanel = null;
+        if (journal != null) { journal.close(); journal = null; }
+        journalProfile = null;
         notifications.clear();
         queuedNotifications.clear();
         lootHistory.clear();
+        sessionRecap.clear();
         sourceSessions.clear();
         lastEventHash = "";
         lastEventAtMillis = 0L;
-        collectionLogPendingUntil = 0L;
+        pendingCollectionItems.clear();
+        recentDrops.clear();
         sessionDrops = 0;
+        sessionGeneration++;
         sessionTotalValue = 0L;
+        sessionPendingDrops = 0;
         sessionBestSource = "";
         sessionBestValue = 0L;
-        mostRecentLootNotification = null;
-        mostRecentLootAt = 0L;
     }
 
     @Subscribe
@@ -219,8 +259,9 @@ public class LootPopPlugin extends Plugin
                 continue;
             }
 
-            long unitPrice = getUnitPrice(itemStack.getId());
-            if (unitPrice <= 0L && !config.showZeroValueItems())
+            LootPriceQuote quote = quoteFor(itemStack.getId(), config.priceMode());
+            long unitPrice = quote.value;
+            if (!quote.shouldInclude(config.showZeroValueItems()))
             {
                 continue;
             }
@@ -233,7 +274,8 @@ public class LootPopPlugin extends Plugin
                 itemStack.getQuantity(),
                 unitPrice,
                 dropRateInfo == null ? null : dropRateInfo.getDisplayRate(),
-                dropRateInfo == null ? 0.0 : dropRateInfo.getOneIn()
+                dropRateInfo == null ? 0.0 : dropRateInfo.getOneIn(),
+                quote.pending
             );
             items.add(item);
         }
@@ -245,7 +287,7 @@ public class LootPopPlugin extends Plugin
             totalValue += item.getTotalValue();
         }
 
-        if (items.isEmpty() || totalValue < config.minimumDropValue())
+        if (items.isEmpty() || !LootPriceQuote.passesMinimum(totalValue, config.minimumDropValue(), items))
         {
             return;
         }
@@ -268,28 +310,30 @@ public class LootPopPlugin extends Plugin
             lastEventHash = eventHash;
             lastEventAtMillis = now;
             LootNotification notification = new LootNotification(sourceName, items, totalValue, now);
-            mostRecentLootNotification = notification;
-            mostRecentLootAt = now;
-            if (now <= collectionLogPendingUntil)
+            notification.requestScreenshot();
+            pendingCollectionItems.values().removeIf(expiry -> expiry < now);
+            for (LootDisplayItem item : items)
             {
-                notification.setCollectionLogUnlock(true);
-                collectionLogPendingUntil = 0L;
+                String itemName = collectionItemName(item);
+                if (pendingCollectionItems.remove(itemName) != null)
+                {
+                    notification.markCollectionLogItem(item.getItemId(), now);
+                }
             }
+            rememberDrop(notification);
             enqueueNotification(notification);
             recordLoot(notification, now);
         }
 
-        playDropSound(totalValue);
-        takeAutomaticScreenshot(sourceName, totalValue, items);
         refreshSidePanel();
     }
 
     @Subscribe
     public void onChatMessage(ChatMessage event)
     {
-        String message = Text.removeTags(event.getMessage());
-        if (message == null || !message.toLowerCase(java.util.Locale.ENGLISH)
-            .contains("new item added to your collection log"))
+        if (event.getType() != ChatMessageType.GAMEMESSAGE) { return; }
+        String itemName = collectionLogItemName(Text.removeTags(event.getMessage()));
+        if (itemName == null)
         {
             return;
         }
@@ -297,22 +341,143 @@ public class LootPopPlugin extends Plugin
         long now = System.currentTimeMillis();
         synchronized (this)
         {
-            LootNotification newest = mostRecentLootNotification;
-            LootHistoryEntry history = lootHistory.peekFirst();
-            if (newest != null && now - mostRecentLootAt <= 3_000L)
+            boolean matched = false;
+            for (LootNotification drop : recentDrops)
             {
-                newest.setCollectionLogUnlock(true);
-                if (history != null)
+                if (now - drop.getCreatedAtMillis() > 5_000L) { continue; }
+                for (LootDisplayItem item : drop.getItems())
                 {
-                    history.setCollectionLogUnlock(true);
+                    if (collectionItemName(item).equals(itemName))
+                    {
+                        confirmCollectionItem(drop, item.getItemId(), now);
+                        matched = true;
+                        break;
+                    }
                 }
+                if (matched) { break; }
             }
-            else
+            if (!matched)
             {
-                collectionLogPendingUntil = now + 3_000L;
+                pendingCollectionItems.values().removeIf(expiry -> expiry < now);
+                pendingCollectionItems.put(itemName, now + 5_000L);
+                while (pendingCollectionItems.size() > 16)
+                {
+                    pendingCollectionItems.remove(pendingCollectionItems.keySet().iterator().next());
+                }
             }
         }
         refreshSidePanel();
+    }
+
+    static String collectionLogItemName(String message)
+    {
+        String prefix = "New item added to your collection log: ";
+        return message != null && message.startsWith(prefix) && message.length() > prefix.length()
+            ? message.substring(prefix.length()).trim().toLowerCase(java.util.Locale.ENGLISH) : null;
+    }
+
+    private String collectionItemName(LootDisplayItem item)
+    {
+        ItemComposition composition = itemManager.getItemComposition(itemManager.canonicalize(item.getItemId()));
+        return composition == null ? "" : composition.getName().trim().toLowerCase(java.util.Locale.ENGLISH);
+    }
+
+    private void rememberDrop(LootNotification notification)
+    {
+        recentDrops.addFirst(notification);
+        while (recentDrops.size() > 32) { recentDrops.removeLast(); }
+    }
+
+    private void confirmCollectionItem(LootNotification drop, int itemId, long now)
+    {
+        if (!drop.markCollectionLogItem(itemId, now)) { return; }
+        // Only rebuild before any reveal is visible. A late unlock must not move settled items.
+        if (queuedNotifications.contains(drop) || drop.getAgeMillis(now) <= 150)
+        {
+            prepareSealedDrop(drop);
+        }
+        for (LootHistoryEntry entry : lootHistory)
+        {
+            if (entry.getTimestamp() == drop.getCreatedAtMillis()
+                && entry.getSourceName().equals(drop.getSourceName()))
+            {
+                entry.setCollectionLogUnlock(true);
+                    for (LootHistoryItem item : entry.getItems())
+                    { if (item.getItemId() == itemId) { item.setCollectionLogItem(true); } }
+                break;
+            }
+        }
+        if (journal != null && config.savedLootHistory())
+        {
+            journal.confirmCollection(drop.getSourceName(), drop.getCreatedAtMillis(), itemId);
+        }
+        sessionRecap.confirmCollection(drop.getSourceName(), drop.getCreatedAtMillis(), itemId);
+        refreshSidePanel();
+    }
+
+    @Subscribe
+    public void onRuneScapeProfileChanged(RuneScapeProfileChanged event) { switchJournalProfile(); }
+
+    @Subscribe
+    public void onProfileChanged(ProfileChanged event) { switchJournalProfile(); }
+
+    private synchronized void switchJournalProfile()
+    {
+        String profile = configManager.getRSProfileKey();
+        if (!java.util.Objects.equals(journalProfile, profile))
+        {
+            notifications.clear(); queuedNotifications.clear(); recentDrops.clear(); pendingCollectionItems.clear();
+            lastEventHash = ""; lastEventAtMillis = 0;
+            clearSession();
+            journalProfile = profile;
+        }
+        if (journal != null) { journal.switchProfile(config.savedLootHistory() ? profile : null); }
+        refreshSidePanel();
+    }
+
+    List<LootHistoryEntry> getJournalEntries()
+    {
+        LootJournalService current = journal;
+        return current == null || !config.savedLootHistory() ? Collections.emptyList() : current.entries();
+    }
+
+    List<LootHistoryEntry> getTrophyEntries()
+    {
+        LootJournalService current = journal;
+        return current == null || !config.savedLootHistory() ? Collections.emptyList() : current.trophies();
+    }
+
+    String getJournalStatus()
+    {
+        if (!config.savedLootHistory()) { return "Saving is off. Existing files are kept."; }
+        LootJournalService current = journal;
+        return current == null ? "Journal not running" : current.status();
+    }
+
+    boolean canClearJournal() { return journal != null && config.savedLootHistory() && journal.canClear(); }
+    String getJournalNotice()
+    {
+        if (config == null) { return ""; }
+        if (!config.savedLootHistory()) { return "Saving is off"; }
+        LootJournalService current = journal;
+        return current == null ? "Journal not running" : current.notice();
+    }
+    void clearJournal() { if (journal != null && config.savedLootHistory()) { journal.clear(); } }
+
+    java.awt.image.BufferedImage getHistoryImage(LootHistoryItem item)
+    {
+        if (item.getImage() != null) { return item.getImage(); }
+        return itemManager == null || item.getItemId() < 0 ? null : itemManager.getImage(item.getItemId(), item.getQuantity(), false);
+    }
+
+    private void prepareSealedDrop(LootNotification notification)
+    {
+        if (config.visualMode() != VisualMode.ENHANCED || !config.sealedDrops()) { return; }
+        SealedDropSequence sequence = new SealedDropSequence(notification.getItems(),
+            notification.getCollectionLogItems(), config.sealedDropRate(), config.collectionLogReveals(),
+            config.reduceMotion(), config.sealedDropSpeed(),
+            LootPopOverlay.visibleItemCount(config, notification.getItems().size()));
+        if (sequence.getCandidateCount() > 0) { notification.setSealedDrop(sequence); }
     }
 
     @Subscribe
@@ -322,6 +487,7 @@ public class LootPopPlugin extends Plugin
         {
             return;
         }
+        if ("savedLootHistory".equals(event.getKey())) { switchJournalProfile(); }
 
         if (sidePanel != null)
         {
@@ -340,6 +506,34 @@ public class LootPopPlugin extends Plugin
     synchronized List<LootNotification> getVisibleNotifications()
     {
         long now = System.currentTimeMillis();
+        for (LootNotification notification : notifications)
+        {
+            SealedDropSequence prepared = notification.getSealedDrop();
+            if (!config.sealedDrops() || config.visualMode() != VisualMode.ENHANCED
+                || (config.reduceMotion() && prepared != null && !prepared.isReducedMotion()))
+            {
+                notification.skipReveal(now);
+            }
+            SealedDropSequence sequence = notification.getSealedDrop();
+            long age = notification.getAgeMillis(now);
+            if (sequence != null && age < sequence.getRevealEndMillis())
+            {
+                for (int i = 0; i < sequence.getCandidateCount(); i++)
+                {
+                    double progress = sequence.progress(age, i);
+                    if (progress >= 0.3 && progress < 1 && notification.takeRevealSound(sequence.getStage(i)))
+                    {
+                        playRevealSound(notification.isCollectionLogItem(sequence.getItems().get(i).getItemId()));
+                    }
+                }
+            }
+            else if (notification.takeSound() && !notification.hasPendingPrices()) { playDropSound(notification.getTotalValue()); }
+            if ((sequence == null || age >= sequence.getDurationMillis()) && notification.takeScreenshot())
+            {
+                clientThread.invokeLater(() -> takeAutomaticScreenshot(notification.getSourceName(),
+                    notification.getTotalValue(), notification.getItems()));
+            }
+        }
         notifications.removeIf(notification -> notification.isExpired(
             now,
             displayDurationFor(notification),
@@ -358,29 +552,28 @@ public class LootPopPlugin extends Plugin
     int displayDurationFor(LootNotification notification)
     {
         int base = config.displayDuration();
-        if (!config.adaptiveDisplayTime())
+        if (config.adaptiveDisplayTime())
         {
-            return base;
+            switch (rarestRarity(notification.getItems()))
+            {
+                case ULTRA_RARE: base += config.ultraRareExtraTime(); break;
+                case VERY_RARE: base += Math.max(config.rareExtraTime(), config.ultraRareExtraTime() / 2); break;
+                case RARE: base += config.rareExtraTime(); break;
+                case UNCOMMON: base += config.rareExtraTime() / 3; break;
+                default: break;
+            }
         }
-
-        DropRarity rarity = rarestRarity(notification.getItems());
-        switch (rarity)
+        long duration = base + notification.getRevealDelayMillis();
+        if (notification.getLateUnlockAtAge() >= 0)
         {
-            case ULTRA_RARE:
-                return base + config.ultraRareExtraTime();
-            case VERY_RARE:
-                return base + Math.max(config.rareExtraTime(), config.ultraRareExtraTime() / 2);
-            case RARE:
-                return base + config.rareExtraTime();
-            case UNCOMMON:
-                return base + config.rareExtraTime() / 3;
-            default:
-                return base;
+            duration = Math.max(duration, notification.getLateUnlockAtAge() + 1800);
         }
+        return (int) Math.min(Integer.MAX_VALUE, duration);
     }
 
     private void enqueueNotification(LootNotification notification)
     {
+        prepareSealedDrop(notification);
         if (notifications.size() < config.maxPopups())
         {
             notifications.addFirst(notification);
@@ -424,7 +617,8 @@ public class LootPopPlugin extends Plugin
             sessionDrops,
             sessionTotalValue,
             sessionBestSource,
-            sessionBestValue
+            sessionBestValue,
+            sessionPendingDrops
         );
     }
 
@@ -439,7 +633,7 @@ public class LootPopPlugin extends Plugin
         {
             return new SessionSnapshot(0, 0L, "", 0L);
         }
-        return new SessionSnapshot(source.drops, source.totalValue, sourceName, source.bestValue);
+        return new SessionSnapshot(source.drops, source.totalValue, sourceName, source.bestValue, source.pendingDrops);
     }
 
     synchronized List<String> getSessionSources()
@@ -452,13 +646,26 @@ public class LootPopPlugin extends Plugin
         return new ArrayList<>(lootHistory);
     }
 
+    LootInsights.Summary getSessionRecap(PriceMode mode) { return sessionRecap.snapshot(mode); }
+
+    synchronized long getSessionGeneration() { return sessionGeneration; }
+
+    synchronized boolean clearSessionIfGeneration(long expected)
+    {
+        if (sessionGeneration != expected) { return false; }
+        clearSession(); return true;
+    }
+
     synchronized void clearSession()
     {
+        sessionGeneration++;
         sessionDrops = 0;
         sessionTotalValue = 0L;
+        sessionPendingDrops = 0;
         sessionBestSource = "";
         sessionBestValue = 0L;
         lootHistory.clear();
+        sessionRecap.clear();
         sourceSessions.clear();
         refreshSidePanel();
     }
@@ -467,7 +674,8 @@ public class LootPopPlugin extends Plugin
     {
         sessionDrops++;
         sessionTotalValue += notification.getTotalValue();
-        if (notification.getTotalValue() > sessionBestValue)
+        if (notification.hasPendingPrices()) { sessionPendingDrops++; }
+        if (!notification.hasPendingPrices() && notification.getTotalValue() > sessionBestValue)
         {
             sessionBestValue = notification.getTotalValue();
             sessionBestSource = notification.getSourceName();
@@ -479,7 +687,8 @@ public class LootPopPlugin extends Plugin
         );
         source.drops++;
         source.totalValue += notification.getTotalValue();
-        source.bestValue = Math.max(source.bestValue, notification.getTotalValue());
+        if (notification.hasPendingPrices()) { source.pendingDrops++; }
+        else { source.bestValue = Math.max(source.bestValue, notification.getTotalValue()); }
 
         List<LootHistoryItem> historyItems = new ArrayList<>();
         for (LootDisplayItem item : notification.getItems())
@@ -498,7 +707,7 @@ public class LootPopPlugin extends Plugin
             {
                 // The text-only fallback keeps history usable if an image is temporarily unavailable.
             }
-            historyItems.add(new LootHistoryItem(
+            LootHistoryItem historyItem = new LootHistoryItem(
                 item.getQuantity(),
                 itemName,
                 gePrice,
@@ -507,7 +716,11 @@ public class LootPopPlugin extends Plugin
                 item.getDropRate(),
                 rarityForRate(item.getDropRateOneIn()),
                 image
-            ));
+            ).withItemId(item.getItemId()).withPriceState(item.isPricePending(),
+                LootPriceQuote.of(PriceMode.GRAND_EXCHANGE, composition != null,
+                    composition != null && composition.isTradeable(), gePrice, highAlchemy).pending);
+            historyItem.setCollectionLogItem(notification.isCollectionLogItem(item.getItemId()));
+            historyItems.add(historyItem);
         }
 
         LootHistoryEntry entry = new LootHistoryEntry(
@@ -518,7 +731,13 @@ public class LootPopPlugin extends Plugin
             historyItems
         );
         entry.setCollectionLogUnlock(notification.isCollectionLogUnlock());
+        entry.setPriceMode(config.priceMode());
+        if (journal != null && config.savedLootHistory())
+        {
+            journal.record(entry, notification, config.personalBestPopups(), config.personalBestMinimum());
+        }
         lootHistory.addFirst(entry);
+        sessionRecap.record(entry);
         while (lootHistory.size() > config.historySize())
         {
             lootHistory.removeLast();
@@ -547,7 +766,8 @@ public class LootPopPlugin extends Plugin
 
         DropRarity rarity = rarestRarity(items);
         boolean meetsRarity = rarity.ordinal() >= screenshotRarityThreshold().ordinal();
-        boolean meetsValue = config.screenshotMinimumValue() > 0
+        boolean incomplete = items.stream().anyMatch(LootDisplayItem::isPricePending);
+        boolean meetsValue = !incomplete && config.screenshotMinimumValue() > 0
             && totalValue >= config.screenshotMinimumValue();
         if (!meetsRarity && !meetsValue)
         {
@@ -560,7 +780,7 @@ public class LootPopPlugin extends Plugin
             safeSource = "Loot";
         }
         imageCapture.takeScreenshot(
-            "Loot Pop - " + safeSource + " - " + totalValue + " gp",
+            "Loot Pop - " + safeSource + " - " + (incomplete ? "price pending" : totalValue + " gp"),
             "Loot Pop",
             true,
             false,
@@ -653,7 +873,23 @@ public class LootPopPlugin extends Plugin
         items.add(platebody);
         items.add(bones);
 
-        if (scenario == TestScenario.MANY_ITEMS)
+        if (scenario == TestScenario.SEALED_DROP)
+        {
+            items.set(1, new LootDisplayItem(platebody.getItemId(), 1, plateValue, "1 / 128", 128));
+        }
+        if (scenario == TestScenario.PRICE_PENDING || scenario == TestScenario.PRICE_PENDING_ONLY)
+        {
+            items.clear();
+            items.add(new LootDisplayItem(ItemID.TWISTED_BOW, 1, 0, "1 / 5,000", 5000, true));
+            if (scenario == TestScenario.PRICE_PENDING) { items.add(bones); }
+        }
+        if (scenario == TestScenario.COLLECTION_LOG_COMMON || scenario == TestScenario.COLLECTION_LOG_LATE)
+        {
+            items.clear();
+            items.add(new LootDisplayItem(ItemID.DRAGON_BONES, 21, bonesUnitValue, "1 / 2", 2));
+            items.add(new LootDisplayItem(995, 1500, 1, null, 0));
+        }
+        if (scenario == TestScenario.MANY_ITEMS || scenario == TestScenario.SEALED_BATCH)
         {
             int[] itemIds = {995, 385, 4151, 11840, 12934, 6571, 3144, 1515};
             for (int i = 0; i < itemIds.length; i++)
@@ -662,8 +898,8 @@ public class LootPopPlugin extends Plugin
                     itemIds[i],
                     i + 2,
                     Math.max(1L, targetValue / (80L + i * 15L)),
-                    "1 / " + (128 * (i + 1)),
-                    128.0 * (i + 1)
+                    "1 / " + (scenario == TestScenario.SEALED_BATCH ? 5000 : 128 * (i + 1)),
+                    scenario == TestScenario.SEALED_BATCH ? 5000 : 128.0 * (i + 1)
                 ));
             }
         }
@@ -686,16 +922,40 @@ public class LootPopPlugin extends Plugin
                     totalValue,
                     now - (popupCount - 1L - i) * 140L
                 );
-                notification.setCollectionLogUnlock(scenario == TestScenario.COLLECTION_LOG);
+                if (scenario == TestScenario.COLLECTION_LOG || scenario == TestScenario.COLLECTION_LOG_COMMON)
+                {
+                    notification.markCollectionLogItem(items.get(0).getItemId(), now);
+                }
+                if (scenario == TestScenario.PERSONAL_BEST)
+                {
+                    notification.markPersonalBest(Math.max(1, totalValue * 3 / 5));
+                }
+                rememberDrop(notification);
                 enqueueNotification(notification);
+                if (scenario == TestScenario.COLLECTION_LOG_LATE)
+                {
+                    final int unlockId = items.get(0).getItemId();
+                    clientThread.invokeLater(() ->
+                    {
+                        if (System.currentTimeMillis() < now + 2000) { return false; }
+                        synchronized (LootPopPlugin.this)
+                        {
+                            if (recentDrops.contains(notification))
+                            {
+                                confirmCollectionItem(notification, unlockId, System.currentTimeMillis());
+                            }
+                        }
+                        return true;
+                    });
+                }
             }
         }
-        playDropSound(totalValue);
     }
 
     private boolean needsDropRateData()
     {
-        if (config.enableDropRarity()
+        if (config.savedLootHistory() || (config.sealedDrops() && config.visualMode() == VisualMode.ENHANCED)
+            || config.enableDropRarity()
             || config.adaptiveDisplayTime()
             || config.automaticScreenshots())
         {
@@ -773,14 +1033,19 @@ public class LootPopPlugin extends Plugin
         });
     }
 
-    private long getUnitPrice(int itemId)
+    private void playRevealSound(boolean collection)
+    {
+        if (!config.rareDropSounds() || config.dropSoundVolume() <= 0 || config.reduceMotion()) { return; }
+        int sound = collection ? SoundEffectID.GE_ADD_OFFER_DINGALING : SoundEffectID.FIRE_WOOSH;
+        clientThread.invokeLater(() -> client.playSoundEffect(sound, config.dropSoundVolume() * 65 / 100));
+    }
+
+    private LootPriceQuote quoteFor(int itemId, PriceMode mode)
     {
         int canonicalId = itemManager.canonicalize(itemId);
-        if (config.priceMode() == PriceMode.HIGH_ALCHEMY)
-        {
-            return Math.max(0, itemManager.getItemComposition(canonicalId).getHaPrice());
-        }
-        return Math.max(0, itemManager.getItemPrice(canonicalId));
+        ItemComposition composition = itemManager.getItemComposition(canonicalId);
+        return LootPriceQuote.of(mode, composition != null, composition != null && composition.isTradeable(),
+            itemManager.getItemPrice(canonicalId), composition == null ? 0 : composition.getHaPrice());
     }
 
     private boolean isTypeEnabled(LootRecordType type)
@@ -824,5 +1089,6 @@ public class LootPopPlugin extends Plugin
         private int drops;
         private long totalValue;
         private long bestValue;
+        private int pendingDrops;
     }
 }

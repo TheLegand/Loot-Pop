@@ -53,11 +53,44 @@ final class LootPopOverlay extends Overlay
     private final ItemManager itemManager;
     private final Client client;
     private final TooltipManager tooltipManager;
+    private final java.util.function.Function<LootDisplayItem, BufferedImage> itemImages;
+    private final java.util.function.Function<LootDisplayItem, String> itemNames;
     private double hoverX = -1.0;
     private double hoverY = -1.0;
     private double tooltipHoverX = -1.0;
     private double tooltipHoverY = -1.0;
     private boolean tooltipEntryActive;
+    private final SealedDropRenderer sealedRenderer = new SealedDropRenderer();
+    private volatile List<RevealTarget> revealTargets = java.util.Collections.emptyList();
+
+    void clearRevealTargets() { revealTargets = java.util.Collections.emptyList(); }
+
+    boolean skipRevealAt(int x, int y)
+    {
+        long now = System.currentTimeMillis();
+        for (RevealTarget target : revealTargets)
+        {
+            SealedDropSequence sequence = target.notification.getSealedDrop();
+            if (sequence != null && target.notification.getAgeMillis(now) < sequence.getRevealEndMillis()
+                && target.bounds.contains(x, y))
+            {
+                target.notification.skipReveal(now);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static final class RevealTarget
+    {
+        final Rectangle bounds;
+        final LootNotification notification;
+        RevealTarget(Rectangle bounds, LootNotification notification)
+        {
+            this.bounds = bounds;
+            this.notification = notification;
+        }
+    }
 
     @Inject
     private LootPopOverlay(
@@ -68,11 +101,26 @@ final class LootPopOverlay extends Overlay
         TooltipManager tooltipManager
     )
     {
+        this(plugin, config, itemManager, client, tooltipManager,
+            item -> itemManager.getImage(item.getItemId(), 1, false),
+            item ->
+            {
+                ItemComposition composition = itemManager.getItemComposition(itemManager.canonicalize(item.getItemId()));
+                return composition == null ? "Unknown item" : composition.getName();
+            });
+    }
+
+    LootPopOverlay(LootPopPlugin plugin, LootPopConfig config, ItemManager itemManager, Client client,
+        TooltipManager tooltipManager, java.util.function.Function<LootDisplayItem, BufferedImage> itemImages,
+        java.util.function.Function<LootDisplayItem, String> itemNames)
+    {
         this.plugin = plugin;
         this.config = config;
         this.itemManager = itemManager;
         this.client = client;
         this.tooltipManager = tooltipManager;
+        this.itemImages = itemImages;
+        this.itemNames = itemNames;
 
         setPosition(OverlayPosition.BOTTOM_RIGHT);
         setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -86,9 +134,14 @@ final class LootPopOverlay extends Overlay
     @Override
     public Dimension render(Graphics2D graphics)
     {
-        List<LootNotification> notifications = plugin.getVisibleNotifications();
+        return renderAt(graphics, plugin.getVisibleNotifications(), System.currentTimeMillis());
+    }
+
+    Dimension renderAt(Graphics2D graphics, List<LootNotification> notifications, long now)
+    {
         if (notifications.isEmpty())
         {
+            clearRevealTargets();
             return null;
         }
 
@@ -105,7 +158,7 @@ final class LootPopOverlay extends Overlay
 
         for (LootNotification notification : notifications)
         {
-            EntrySize entrySize = measureEntry(g, notification, headerFont, ultraFont);
+            EntrySize entrySize = measureEntry(g, notification, headerFont, ultraFont, now);
             entrySizes.add(entrySize);
             maxWidth = Math.max(maxWidth, entrySize.width);
             totalHeight += entrySize.height;
@@ -128,7 +181,7 @@ final class LootPopOverlay extends Overlay
         g.translate(offsetX, offsetY);
         g.scale(scale, scale);
 
-        long now = System.currentTimeMillis();
+        List<RevealTarget> targets = new ArrayList<>();
         int y = 0;
         for (int i = 0; i < notifications.size(); i++)
         {
@@ -138,7 +191,18 @@ final class LootPopOverlay extends Overlay
                 && hoverX < entrySize.width
                 && hoverY >= y
                 && hoverY < y + entrySize.height;
-            notification.setHovered(config.pauseOnHover() && hovered, now);
+            boolean revealing = isRevealing(notification, now);
+            notification.setHovered(config.pauseOnHover() && hovered && !revealing, now);
+            if (revealing)
+            {
+                Rectangle bounds = getBounds();
+                SealedDropSequence activeReveal = notification.getSealedDrop();
+                int revealStart = activeReveal == null ? entrySize.height
+                    : config.popupStyle() == PopupStyle.ULTRA_COMPACT ? LOOT_STRIP_HEIGHT : 25;
+                targets.add(new RevealTarget(new Rectangle(bounds.x + offsetX,
+                    bounds.y + (int) Math.round((y + revealStart) * scale),
+                    (int) Math.round(entrySize.width * scale), (int) Math.round((entrySize.height - revealStart) * scale)), notification));
+            }
             float alpha = notification.getAlpha(now, plugin.displayDurationFor(notification), config.fadeDuration());
             Graphics2D entryGraphics = (Graphics2D) g.create();
             entryGraphics.setComposite(AlphaComposite.SrcOver.derive(alpha));
@@ -146,7 +210,7 @@ final class LootPopOverlay extends Overlay
             tooltipEntryActive = hovered;
             tooltipHoverX = hoverX;
             tooltipHoverY = hoverY;
-            if (isEnhancedMode() && config.smoothEntrance() && !config.reduceMotion())
+            if (notification.getSealedDrop() == null && isEnhancedMode() && config.smoothEntrance() && !config.reduceMotion())
             {
                 double progress = entranceProgress(notification.getAgeMillis(now));
                 double entryScale = 0.92 + progress * 0.08;
@@ -167,10 +231,12 @@ final class LootPopOverlay extends Overlay
             {
                 drawTwoRow(entryGraphics, notification, 0, drawY, entrySize.width, entrySize.height, headerFont, now);
             }
+            drawPersonalBest(entryGraphics, notification, 0, drawY, entrySize.width, entrySize.height, now);
             entryGraphics.dispose();
             y += entrySize.height + config.popupSpacing();
         }
         tooltipEntryActive = false;
+        revealTargets = targets;
 
         g.dispose();
         return new Dimension(outputWidth, outputHeight);
@@ -196,39 +262,41 @@ final class LootPopOverlay extends Overlay
         Graphics2D g,
         LootNotification notification,
         Font headerFont,
-        Font ultraFont
+        Font ultraFont,
+        long now
     )
     {
-        int itemCount = displayedItemCount(notification.getItems());
-        int itemsWidth = measureItemsGridWidth(g, notification.getItems(), itemCount);
-        String value = formatGp(notification.getTotalValue());
+        int itemCount = displayedItemCount(notification.getDisplayItems());
+        int itemsWidth = measureItemsGridWidth(g, notification.getDisplayItems(), itemCount);
+        String value = LootValueText.compact(notification.getTotalValue(), notification.hasPendingPrices());
+        SealedDropSequence measuredReveal = notification.getSealedDrop();
+        String sealedValue = measuredReveal == null ? value
+            : "SEALED " + measuredReveal.getStageCount() + "/" + measuredReveal.getStageCount();
 
         if (config.popupStyle() == PopupStyle.ULTRA_COMPACT)
         {
             g.setFont(ultraFont);
             FontMetrics metrics = g.getFontMetrics();
-            int nameWidth = Math.min(92, metrics.stringWidth(notification.getSourceName()));
+            int nameWidth = Math.min(61, metrics.stringWidth(notification.getSourceName()));
             int collectionBadgeWidth = notification.isCollectionLogUnlock() ? 31 : 0;
-            int width = 15 + nameWidth + collectionBadgeWidth + 14 + itemsWidth
-                + 12 + metrics.stringWidth(value) + 13;
-            return new EntrySize(Math.max(LOOT_STRIP_MIN_WIDTH, width), LOOT_STRIP_HEIGHT);
+            int width = 28 + nameWidth + collectionBadgeWidth + 14 + itemsWidth
+                + 12 + Math.max(metrics.stringWidth(value), metrics.stringWidth(sealedValue)) + 13;
+            return new EntrySize(Math.max(LOOT_STRIP_MIN_WIDTH, width), LOOT_STRIP_HEIGHT
+                + (notification.isPersonalBest() ? 22 : 0) + revealHeight(notification, now));
         }
 
-        g.setFont(headerFont);
-        FontMetrics metrics = g.getFontMetrics();
-        int collectionBadgeWidth = notification.isCollectionLogUnlock() ? 31 : 0;
-        int headerWidth = Math.min(145, metrics.stringWidth(notification.getSourceName()))
-            + collectionBadgeWidth
-            + metrics.stringWidth(value)
-            + 30;
         boolean survival = config.popupStyle() == PopupStyle.MINIMAL_EDGE;
         int minimumWidth = survival ? SURVIVAL_MIN_WIDTH : TWO_ROW_MIN_WIDTH;
         int contentPadding = survival ? 24 : 14;
-        int width = Math.max(minimumWidth, Math.max(itemsWidth + contentPadding, headerWidth));
-        int occupiedSlots = itemCount + (notification.getItems().size() > itemCount ? 1 : 0);
+        // A long source, value or NEW badge must not zoom down the entire popup.
+        // Header text already ellipsizes to the available space in drawTwoRow.
+        int width = Math.max(minimumWidth, itemsWidth + contentPadding);
+        int occupiedSlots = itemCount + (notification.getDisplayItems().size() > itemCount ? 1 : 0);
         int rows = Math.max(1, (occupiedSlots + GRID_COLUMNS - 1) / GRID_COLUMNS);
         int baseHeight = survival ? SURVIVAL_HEIGHT : CLASSIC_HEIGHT;
-        return new EntrySize(width, baseHeight + (rows - 1) * (ICON_HEIGHT + GRID_ROW_GAP));
+        return new EntrySize(width,
+            baseHeight + (rows - 1) * (ICON_HEIGHT + GRID_ROW_GAP)
+                + (notification.isPersonalBest() ? 22 : 0) + revealHeight(notification, now));
     }
 
     private void drawTwoRow(
@@ -242,19 +310,33 @@ final class LootPopOverlay extends Overlay
         long now
     )
     {
-        TierVisual tier = tierFor(notification);
+        TierVisual tier = isRevealing(notification, now) ? tierForValue(0) : tierFor(notification);
         drawBackground(g, x, y, width, height, config.popupStyle(), tier, now, notification);
 
         g.setFont(font);
-        FontMetrics metrics = g.getFontMetrics();
         boolean survival = config.popupStyle() == PopupStyle.MINIMAL_EDGE;
         int leftPadding = survival ? 14 : 7;
-        String value = formatGp(notification.getTotalValue());
+        String value = revealHeader(notification, now);
         int rightPadding = survival ? 12 : 7;
-        int valueX = x + width - rightPadding - metrics.stringWidth(value);
-        boolean lucky = isLucky(notification.getItems());
-        int nameX = x + leftPadding + (lucky ? 13 : 0);
+        boolean lucky = !isRevealing(notification, now) && isLucky(notification.getItems());
         int collectionBadgeWidth = notification.isCollectionLogUnlock() ? 31 : 0;
+        // Fit a reveal's longer header without scaling down its frame or sprites.
+        // Ordinary popups keep their original typography and proportions.
+        if (notification.getSealedDrop() != null || notification.isCollectionLogUnlock())
+        {
+            int available = width - leftPadding - rightPadding - (lucky ? 13 : 0) - collectionBadgeWidth - 8;
+            int textWidth = g.getFontMetrics().stringWidth(notification.getSourceName()) + g.getFontMetrics().stringWidth(value);
+            if (textWidth > available)
+            {
+                g.setFont(font.deriveFont(Math.max(12f, font.getSize2D() * available / Math.max(1, textWidth))));
+                while (g.getFont().getSize2D() > 12f && g.getFontMetrics().stringWidth(notification.getSourceName())
+                    + g.getFontMetrics().stringWidth(value) > available)
+                { g.setFont(font.deriveFont(Math.max(12f, g.getFont().getSize2D() - .5f))); }
+            }
+        }
+        FontMetrics metrics = g.getFontMetrics();
+        int valueX = x + width - rightPadding - metrics.stringWidth(value);
+        int nameX = x + leftPadding + (lucky ? 13 : 0);
         int maxNameWidth = Math.max(20, valueX - nameX - 8 - collectionBadgeWidth);
         String name = ellipsize(notification.getSourceName(), metrics, maxNameWidth);
         int headerBaseline = y + (survival ? 20 : 18);
@@ -263,18 +345,18 @@ final class LootPopOverlay extends Overlay
             drawLuckyStar(g, x + leftPadding + 5, headerBaseline - 5, rarityColour(rarestRarity(notification.getItems())));
         }
         drawText(g, name, nameX, headerBaseline, config.npcNameColour());
-        if (notification.isCollectionLogUnlock())
+        if (notification.isCollectionLogUnlock() && !isRevealing(notification, now))
         {
             drawCollectionLogBadge(g, nameX + metrics.stringWidth(name) + 5, headerBaseline - 12);
         }
         drawText(g, value, valueX, headerBaseline, tier.valueColour);
-        addTotalValueTooltipIfHovered(
-            notification.getTotalValue(),
+        if (!isRevealing(notification, now)) { addTotalValueTooltipIfHovered(
+            notification,
             valueX,
             headerBaseline,
             metrics,
             tier.valueColour
-        );
+        ); }
 
         if (config.showSeparator())
         {
@@ -284,16 +366,16 @@ final class LootPopOverlay extends Overlay
             g.drawLine(x + leftPadding, separatorY, x + width - rightPadding, separatorY);
         }
 
-        int itemCount = displayedItemCount(notification.getItems());
+        int itemCount = displayedItemCount(notification.getDisplayItems());
         drawItemsGrid(
             g,
-            notification.getItems(),
+            notification.getDisplayItems(),
             itemCount,
             x + leftPadding,
             y + (survival ? 33 : 29),
             tier.accentColour,
             now,
-            notification
+            notification, x, y, width, height, width - leftPadding - rightPadding
         );
     }
 
@@ -308,34 +390,35 @@ final class LootPopOverlay extends Overlay
         long now
     )
     {
-        TierVisual tier = tierFor(notification);
+        TierVisual tier = isRevealing(notification, now) ? tierForValue(0) : tierFor(notification);
         drawBackground(g, x, y, width, height, PopupStyle.ULTRA_COMPACT, tier, now, notification);
 
         g.setFont(font);
         FontMetrics metrics = g.getFontMetrics();
-        String value = formatGp(notification.getTotalValue());
+        String value = revealHeader(notification, now);
         int valueWidth = metrics.stringWidth(value);
         int valueChipWidth = valueWidth + 20;
         int valueChipX = x + width - valueChipWidth;
         int valueX = x + width - 10 - valueWidth;
-        boolean lucky = isLucky(notification.getItems());
-        int nameX = x + 15 + (lucky ? 13 : 0);
+        boolean lucky = !isRevealing(notification, now) && isLucky(notification.getItems());
+        int nameX = x + 28;
         int collectionBadgeWidth = notification.isCollectionLogUnlock() ? 31 : 0;
-        String name = ellipsize(notification.getSourceName(), metrics, 92 - collectionBadgeWidth);
+        String name = ellipsize(notification.getSourceName(), metrics, 61);
         if (lucky)
         {
             drawLuckyStar(g, x + 19, y + 26, rarityColour(rarestRarity(notification.getItems())));
         }
         drawText(g, name, nameX, y + 31, config.npcNameColour());
-        if (notification.isCollectionLogUnlock())
+        if (notification.isCollectionLogUnlock() && !isRevealing(notification, now))
         {
             drawCollectionLogBadge(g, nameX + metrics.stringWidth(name) + 4, y + 18);
         }
 
-        int itemCount = displayedItemCount(notification.getItems());
+        int itemCount = displayedItemCount(notification.getDisplayItems());
         int itemsX = nameX + metrics.stringWidth(name) + collectionBadgeWidth + 14;
-        int itemsWidth = measureItemsGridWidth(g, notification.getItems(), itemCount);
-        drawItemsGrid(g, notification.getItems(), itemCount, itemsX, y + 9, tier.accentColour, now, notification);
+        int itemsWidth = measureItemsGridWidth(g, notification.getDisplayItems(), itemCount);
+        drawItemsGrid(g, notification.getDisplayItems(), itemCount, itemsX, y + 9, tier.accentColour,
+            now, notification, x, y, width, height, Math.max(itemsWidth, valueChipX - itemsX - 5));
 
         if (config.showSeparator())
         {
@@ -343,29 +426,29 @@ final class LootPopOverlay extends Overlay
             int valueSeparatorX = Math.min(valueChipX, itemsX + itemsWidth + 7);
             g.setColor(withAlpha(tier.accentColour, 92));
             g.setStroke(new BasicStroke(1.0f));
-            g.drawLine(nameSeparatorX, y + 10, nameSeparatorX, y + height - 10);
-            g.drawLine(valueSeparatorX, y + 8, valueSeparatorX, y + height - 8);
+            g.drawLine(nameSeparatorX, y + 10, nameSeparatorX, y + LOOT_STRIP_HEIGHT - 10);
+            g.drawLine(valueSeparatorX, y + 8, valueSeparatorX, y + LOOT_STRIP_HEIGHT - 8);
         }
 
         Path2D valueModule = new Path2D.Float();
         valueModule.moveTo(valueChipX + 7, y + 5);
         valueModule.lineTo(x + width - 1, y + 5);
-        valueModule.lineTo(x + width - 1, y + height - 6);
-        valueModule.lineTo(valueChipX, y + height - 6);
+        valueModule.lineTo(x + width - 1, y + LOOT_STRIP_HEIGHT - 6);
+        valueModule.lineTo(valueChipX, y + LOOT_STRIP_HEIGHT - 6);
         valueModule.closePath();
         g.setColor(withAlpha(tier.accentColour, isEnhancedMode() ? 34 : 18));
         g.fill(valueModule);
         g.setColor(withAlpha(tier.accentColour, isEnhancedMode() ? 115 : 72));
         g.setStroke(new BasicStroke(1.0f));
-        g.drawLine(valueChipX + 7, y + 5, valueChipX, y + height - 6);
+        g.drawLine(valueChipX + 7, y + 5, valueChipX, y + LOOT_STRIP_HEIGHT - 6);
         drawText(g, value, valueX, y + 31, tier.valueColour);
-        addTotalValueTooltipIfHovered(
-            notification.getTotalValue(),
+        if (!isRevealing(notification, now)) { addTotalValueTooltipIfHovered(
+            notification,
             valueX,
             y + 31,
             metrics,
             tier.valueColour
-        );
+        ); }
     }
 
     private void drawBackground(
@@ -1152,33 +1235,50 @@ final class LootPopOverlay extends Overlay
         int y,
         Color accentColour,
         long now,
-        LootNotification notification
+        LootNotification notification,
+        int panelX, int panelY, int panelWidth, int panelHeight, int availableWidth
     )
     {
         Font oldFont = g.getFont();
         Font quantityFont = FontManager.getRunescapeBoldFont().deriveFont(Font.BOLD, 14f);
-        int cursorX = x;
-        int cursorY = y;
+        SealedDropSequence sequence = notification.getSealedDrop();
+        long age = notification.getAgeMillis(now);
+        int[] slotXs = new int[itemCount];
+        int[] slotYs = new int[itemCount];
+        int[] widths = new int[itemCount + (items.size() > itemCount ? 1 : 0)];
+        for (int i = 0; i < itemCount; i++) { widths[i] = itemSlotWidth(g, items.get(i), quantityFont); }
+        if (widths.length > itemCount) { widths[itemCount] = LootArtwork.OVERFLOW_WIDTH; }
+        List<Rectangle> slots = LootGridLayout.slots(widths, x, y, availableWidth, GRID_COLUMNS);
         for (int i = 0; i < itemCount; i++)
         {
-            if (i > 0 && i % GRID_COLUMNS == 0)
-            {
-                cursorX = x;
-                cursorY += ICON_HEIGHT + GRID_ROW_GAP;
-            }
+            Rectangle slot = slots.get(i);
+            int cursorX = slot.x;
+            int cursorY = slot.y;
             LootDisplayItem item = items.get(i);
             Composite oldItemComposite = g.getComposite();
-            float revealAlpha = itemRevealAlpha(notification.getAgeMillis(now), i);
+            boolean candidate = sequence != null && i < sequence.getCandidateCount();
+            float revealAlpha = sequence == null ? itemRevealAlpha(age, i)
+                : candidate ? (sequence.progress(age, i) >= 1 ? 1f : 0f) : sequence.normalAlpha(age);
             if (revealAlpha < 1.0f && oldItemComposite instanceof AlphaComposite)
             {
                 float parentAlpha = ((AlphaComposite) oldItemComposite).getAlpha();
                 g.setComposite(AlphaComposite.SrcOver.derive(parentAlpha * revealAlpha));
             }
             BufferedImage image = getItemImage(item);
-            int slotWidth = itemSlotWidth(g, item, quantityFont);
+            int slotWidth = slot.width;
             int itemX = cursorX + (slotWidth - ICON_WIDTH) / 2;
-            if (image != null)
+            slotXs[i] = itemX;
+            slotYs[i] = cursorY;
+            if (image != null && revealAlpha > 0)
             {
+                if (notification.isCollectionLogItem(item.getItemId()))
+                {
+                    long lateAge = age - notification.getLateUnlockAtAge();
+                    if (notification.getLateUnlockAtAge() >= 0 && lateAge < 1800 && !config.reduceMotion())
+                    {
+                        drawUltraRareItemGlow(g, itemX, cursorY, SealedDropRenderer.COLLECTION_GOLD, now, i);
+                    }
+                }
                 if (isEnhancedMode() && config.itemSpotlights())
                 {
                     DropRarity rarity = rarityFor(item);
@@ -1198,7 +1298,11 @@ final class LootPopOverlay extends Overlay
                         g.fillOval(itemX + 7, cursorY + 4, 22, 24);
                     }
                 }
-                g.drawImage(image, itemX, cursorY, null);
+                LootArtwork.drawPopup(g, image, itemX, cursorY);
+                if (notification.isCollectionLogItem(item.getItemId()))
+                {
+                    SealedDropRenderer.drawBook(g, itemX + 23, cursorY + 21, SealedDropRenderer.COLLECTION_GOLD);
+                }
 
                 if (item.getQuantity() > 1)
                 {
@@ -1216,6 +1320,7 @@ final class LootPopOverlay extends Overlay
             g.setComposite(oldItemComposite);
 
             if (tooltipEntryActive
+                && revealAlpha >= 0.95f
                 && config.showItemTooltips()
                 && tooltipHoverX >= itemX
                 && tooltipHoverX < itemX + ICON_WIDTH
@@ -1224,22 +1329,119 @@ final class LootPopOverlay extends Overlay
             {
                 tooltipManager.add(new Tooltip(buildItemTooltip(item)));
             }
-            cursorX += slotWidth + ICON_GAP;
         }
 
         int hiddenCount = items.size() - itemCount;
-        if (hiddenCount > 0)
+        if (hiddenCount > 0 && (sequence == null || sequence.normalAlpha(age) > 0))
         {
+            Composite beforeOverflow = g.getComposite();
+            if (sequence != null) { SealedDropRenderer.fade(g, sequence.normalAlpha(age)); }
             drawOverflowIndicator(
                 g,
                 items,
                 itemCount,
-                cursorX,
-                cursorY,
+                slots.get(itemCount).x,
+                slots.get(itemCount).y,
                 accentColour
             );
+            g.setComposite(beforeOverflow);
+        }
+        if (sequence != null && age < sequence.getRevealEndMillis())
+        {
+            Graphics2D reveal = (Graphics2D) g.create();
+            reveal.clipRect(panelX + 1, panelY + 1, panelWidth - 2, panelHeight - 2);
+            int contentTop = panelY + (config.popupStyle() == PopupStyle.ULTRA_COMPACT ? LOOT_STRIP_HEIGHT : 25);
+            int contentBottom = panelY + panelHeight - (notification.isPersonalBest() ? 22 : 0) - 8;
+            int activeStage = sequence.activeStage(age);
+            int groupedCount = 0;
+            for (int i = 0; i < sequence.getCandidateCount(); i++)
+            {
+                if (sequence.getStage(i) == activeStage) { groupedCount++; }
+            }
+            boolean grouped = groupedCount > 1;
+            int groupIndex = 0;
+            for (int i = 0; i < sequence.getCandidateCount() && i < itemCount; i++)
+            {
+                double progress = sequence.progress(age, i);
+                if (sequence.getStage(i) != activeStage) { continue; }
+                LootDisplayItem item = items.get(i);
+                int columns = Math.min(4, groupedCount);
+                int rows = (groupedCount + columns - 1) / columns;
+                int rowCount = Math.min(columns, groupedCount - (groupIndex / columns) * columns);
+                int sceneX = panelX + panelWidth / 2;
+                int sceneY = (contentTop + contentBottom) / 2;
+                if (grouped)
+                {
+                    // Keep the reveal group below already settled rares, centered as a whole.
+                    sceneX += ((groupIndex % columns) * 2 - rowCount + 1) * 23;
+                    sceneY = Math.max(sceneY, y + ICON_HEIGHT + 24 + (rows - 1) * 22);
+                    sceneY += ((groupIndex / columns) * 2 - rows + 1) * 22;
+                }
+                else if (activeStage > 0) { sceneY = Math.max(sceneY, y + ICON_HEIGHT + 30); }
+                String name = itemNames.apply(item);
+                sealedRenderer.draw(reveal, item, getItemImage(item), name, rarityColour(rarityFor(item)),
+                    notification.isCollectionLogItem(item.getItemId()), progress, sceneX, sceneY,
+                    slotXs[i], slotYs[i], panelWidth - 24, sequence.isReducedMotion(), !grouped);
+                groupIndex++;
+            }
+            reveal.dispose();
         }
         g.setFont(oldFont);
+    }
+
+    private void drawPersonalBest(Graphics2D parent, LootNotification notification, int x, int y,
+        int width, int height, long now)
+    {
+        if (!notification.isPersonalBest() || isRevealing(notification, now)) { return; }
+        Graphics2D g = (Graphics2D) parent.create();
+        SealedDropSequence sequence = notification.getSealedDrop();
+        if (sequence != null) { SealedDropRenderer.fade(g, sequence.normalAlpha(notification.getAgeMillis(now))); }
+        int baseline = y + height - 8;
+        g.setColor(new Color(230, 198, 131, 65));
+        g.drawLine(x + 9, baseline - 14, x + width - 9, baseline - 14);
+        g.setFont(FontManager.getRunescapeSmallFont().deriveFont(12f));
+        Color gold = new Color(230, 198, 131);
+        drawText(g, "NEW BEST", x + 10, baseline, gold);
+        String gain = "+" + formatGp(notification.getTotalValue() - notification.getPreviousBest());
+        drawText(g, gain, x + width - 10 - g.getFontMetrics().stringWidth(gain), baseline, gold);
+        if (tooltipEntryActive && tooltipHoverX >= x && tooltipHoverX < x + width
+            && tooltipHoverY >= baseline - 15 && tooltipHoverY < baseline + 5)
+        {
+            tooltipManager.add(new Tooltip("Personal best for " + notification.getSourceName()
+                + tooltipRow("Previous", formatExactGp(notification.getPreviousBest()), Color.WHITE)
+                + tooltipRow("New", formatExactGp(notification.getTotalValue()), gold)));
+        }
+        g.dispose();
+    }
+
+    private static boolean isRevealing(LootNotification notification, long now)
+    {
+        SealedDropSequence sequence = notification.getSealedDrop();
+        return sequence != null && notification.getAgeMillis(now) < sequence.getRevealEndMillis();
+    }
+
+    private int revealHeight(LootNotification notification, long now)
+    {
+        SealedDropSequence sequence = notification.getSealedDrop();
+        if (sequence == null || sequence.isReducedMotion()) { return 0; }
+        int count = displayedItemCount(notification.getDisplayItems());
+        int occupied = count + (notification.getDisplayItems().size() > count ? 1 : 0);
+        int rows = Math.max(1, (occupied + GRID_COLUMNS - 1) / GRID_COLUMNS);
+        boolean strip = config.popupStyle() == PopupStyle.ULTRA_COMPACT;
+        int normalHeight = strip ? LOOT_STRIP_HEIGHT : (config.popupStyle() == PopupStyle.MINIMAL_EDGE ? SURVIVAL_HEIGHT : CLASSIC_HEIGHT)
+            + (rows - 1) * (ICON_HEIGHT + GRID_ROW_GAP);
+        int stageHeight = strip || sequence.getCandidateCount() > 6 ? 156 : 144;
+        if (config.popupStyle() == PopupStyle.MINIMAL_EDGE) { stageHeight += 4; }
+        return (int) Math.round(Math.max(0, stageHeight - normalHeight)
+            * (1 - SealedDropSequence.ease(sequence.normalAlpha(notification.getAgeMillis(now)))));
+    }
+
+    private static String revealHeader(LootNotification notification, long now)
+    {
+        SealedDropSequence sequence = notification.getSealedDrop();
+        return sequence != null && notification.getAgeMillis(now) < sequence.getRevealEndMillis()
+            ? "SEALED " + (sequence.activeStage(notification.getAgeMillis(now)) + 1) + "/" + sequence.getStageCount()
+            : LootValueText.compact(notification.getTotalValue(), notification.hasPendingPrices());
     }
 
     private float itemRevealAlpha(long ageMillis, int itemIndex)
@@ -1291,7 +1493,7 @@ final class LootPopOverlay extends Overlay
             {
                 rowWidth += ICON_GAP;
             }
-            rowWidth += ICON_WIDTH;
+            rowWidth += LootArtwork.OVERFLOW_WIDTH;
         }
         return Math.max(maxWidth, rowWidth);
     }
@@ -1306,27 +1508,15 @@ final class LootPopOverlay extends Overlay
     )
     {
         int hiddenCount = items.size() - itemCount;
-        String label = "+" + hiddenCount;
         Font oldFont = g.getFont();
         g.setFont(FontManager.getRunescapeBoldFont().deriveFont(Font.BOLD, 13f));
-        FontMetrics metrics = g.getFontMetrics();
-        int badgeSize = 27;
-        int badgeX = x + 4;
-        int badgeY = y + 3;
-        int textX = badgeX + (badgeSize - metrics.stringWidth(label)) / 2;
-        int textY = badgeY + (badgeSize + metrics.getAscent() - metrics.getDescent()) / 2;
-
-        g.setColor(new Color(0, 0, 0, 145));
-        g.fillRoundRect(badgeX, badgeY, badgeSize, badgeSize, 9, 9);
-        g.setColor(withAlpha(accentColour, 150));
-        g.drawRoundRect(badgeX, badgeY, badgeSize - 1, badgeSize - 1, 9, 9);
-        drawText(g, label, textX, textY, Color.WHITE);
+        LootArtwork.drawOverflowBadge(g, hiddenCount, x, y, accentColour);
         if (tooltipEntryActive
             && config.showItemTooltips()
-            && tooltipHoverX >= badgeX
-            && tooltipHoverX < badgeX + badgeSize
-            && tooltipHoverY >= badgeY
-            && tooltipHoverY < badgeY + badgeSize)
+            && tooltipHoverX >= x
+            && tooltipHoverX < x + LootArtwork.OVERFLOW_WIDTH
+            && tooltipHoverY >= y
+            && tooltipHoverY < y + LootArtwork.OVERFLOW_HEIGHT)
         {
             tooltipManager.add(new Tooltip(buildHiddenItemsTooltip(items, itemCount)));
         }
@@ -1335,9 +1525,14 @@ final class LootPopOverlay extends Overlay
 
     private int displayedItemCount(List<LootDisplayItem> items)
     {
+        return visibleItemCount(config, items.size());
+    }
+
+    static int visibleItemCount(LootPopConfig config, int size)
+    {
         int capacity = config.popupStyle() == PopupStyle.ULTRA_COMPACT ? GRID_COLUMNS : GRID_COLUMNS * 2;
-        int requested = Math.min(Math.min(config.maxItems(), capacity), items.size());
-        if (items.size() > requested && requested > 0 && requested % GRID_COLUMNS == 0)
+        int requested = Math.min(Math.min(config.maxItems(), capacity), size);
+        if (size > requested && requested > 0 && requested % GRID_COLUMNS == 0)
         {
             return requested - 1;
         }
@@ -1353,7 +1548,7 @@ final class LootPopOverlay extends Overlay
     {
         hoverX = -1.0;
         hoverY = -1.0;
-        if (scale <= 0.0)
+        if (scale <= 0.0 || client == null)
         {
             return;
         }
@@ -1374,10 +1569,17 @@ final class LootPopOverlay extends Overlay
         int canonicalId = itemManager.canonicalize(item.getItemId());
         ItemComposition composition = itemManager.getItemComposition(canonicalId);
         String itemName = composition == null ? "Unknown item" : composition.getName();
-        Color tierColour = quantityColourForValue(item.getTotalValue());
-        NumberFormat numbers = NumberFormat.getIntegerInstance(Locale.US);
         long gePrice = Math.max(0L, itemManager.getItemPrice(canonicalId));
         long highAlchemyPrice = composition == null ? 0L : Math.max(0L, composition.getHaPrice());
+        boolean gePending = LootPriceQuote.of(PriceMode.GRAND_EXCHANGE, composition != null,
+            composition != null && composition.isTradeable(), gePrice, highAlchemyPrice).pending;
+        return buildItemTooltip(item, itemName, gePrice, highAlchemyPrice, gePending);
+    }
+
+    String buildItemTooltip(LootDisplayItem item, String itemName, long gePrice, long highAlchemyPrice, boolean gePending)
+    {
+        Color tierColour = quantityColourForValue(item.getTotalValue());
+        NumberFormat numbers = NumberFormat.getIntegerInstance(Locale.US);
         String dropRate = item.getDropRate() == null ? "N/A" : item.getDropRate();
         DropRarity rarity = rarityFor(item);
         Color dropRateColour = item.getDropRate() == null
@@ -1390,15 +1592,17 @@ final class LootPopOverlay extends Overlay
         boolean showChance = mode != HoverDetailMode.CUSTOM || config.hoverShowDropChance();
 
         StringBuilder tooltip = new StringBuilder(ColorUtil.wrapWithColorTag(itemName, tierColour));
-        tooltip.append(tooltipRow("Qty", numbers.format(item.getQuantity()), Color.WHITE));
+        if (item.getQuantity() > 1) { tooltip.append(tooltipRow("Qty", numbers.format(item.getQuantity()), Color.WHITE)); }
         if (showPrices)
         {
-            tooltip.append(tooltipRow("GE", formatTooltipPrice(gePrice, numbers), Color.WHITE));
-            tooltip.append(tooltipRow("HA", formatTooltipPrice(highAlchemyPrice, numbers), Color.WHITE));
+            tooltip.append(tooltipRow("GE", gePending ? "Price pending" : numbers.format(gePrice) + " gp",
+                gePending ? TOOLTIP_LABEL_COLOUR : rarityColour(rarity)));
+            tooltip.append(tooltipRow("HA", formatTooltipPrice(highAlchemyPrice, numbers),
+                LootTooltipStyle.highAlchemy(gePrice, highAlchemyPrice, gePending)));
         }
-        if (showStack)
+        if (showStack && item.getQuantity() > 1)
         {
-            tooltip.append(tooltipRow("Stack", formatTooltipPrice(item.getTotalValue(), numbers), tierColour));
+            tooltip.append(tooltipRow("Stack", item.isPricePending() ? "Price pending" : numbers.format(item.getTotalValue()) + " gp", tierColour));
         }
         if (showChance)
         {
@@ -1408,14 +1612,16 @@ final class LootPopOverlay extends Overlay
     }
 
     private void addTotalValueTooltipIfHovered(
-        long totalValue,
+        LootNotification notification,
         int textX,
         int baseline,
         FontMetrics metrics,
         Color valueColour
     )
     {
-        String compactValue = formatGp(totalValue);
+        long totalValue = notification.getTotalValue();
+        boolean pending = notification.hasPendingPrices();
+        String compactValue = LootValueText.compact(totalValue, pending);
         int padding = 4;
         int left = textX - padding;
         int right = textX + metrics.stringWidth(compactValue) + padding;
@@ -1433,37 +1639,24 @@ final class LootPopOverlay extends Overlay
             : "GE total";
         String tooltip = ColorUtil.wrapWithColorTag(priceSource, TOOLTIP_LABEL_COLOUR)
             + "<br>"
-            + ColorUtil.wrapWithColorTag(formatExactGp(totalValue), valueColour);
+            + ColorUtil.wrapWithColorTag(LootValueText.detail(totalValue, pending), valueColour);
         tooltipManager.add(new Tooltip(tooltip));
     }
 
-    private String buildHiddenItemsTooltip(List<LootDisplayItem> items, int itemCount)
+    HiddenItemsTooltip buildHiddenItemsTooltip(List<LootDisplayItem> items, int itemCount)
     {
         int hiddenCount = items.size() - itemCount;
-        StringBuilder tooltip = new StringBuilder(ColorUtil.wrapWithColorTag(
-            "Hidden items (" + hiddenCount + ")",
-            Color.WHITE
-        ));
+        List<HiddenItemsTooltip.ItemRow> rows = new ArrayList<>();
         NumberFormat numbers = NumberFormat.getIntegerInstance(Locale.US);
-        int shown = 0;
-        for (int i = itemCount; i < items.size() && shown < 8; i++, shown++)
+        for (int i = itemCount; i < items.size() && rows.size() < 8; i++)
         {
             LootDisplayItem item = items.get(i);
-            int canonicalId = itemManager.canonicalize(item.getItemId());
-            ItemComposition composition = itemManager.getItemComposition(canonicalId);
-            String name = composition == null ? "Unknown item" : composition.getName();
+            String name = itemNames.apply(item);
             String quantity = item.getQuantity() > 1 ? " x" + numbers.format(item.getQuantity()) : "";
-            tooltip.append("<br>")
-                .append(ColorUtil.wrapWithColorTag(name + quantity, rarityColour(rarityFor(item))))
-                .append(" ")
-                .append(ColorUtil.wrapWithColorTag(formatTooltipPrice(item.getTotalValue(), numbers), TOOLTIP_LABEL_COLOUR));
+            rows.add(new HiddenItemsTooltip.ItemRow(getItemImage(item), name + quantity,
+                item.isPricePending() ? "Price pending" : numbers.format(item.getTotalValue()) + " gp", rarityColour(rarityFor(item))));
         }
-        if (hiddenCount > shown)
-        {
-            tooltip.append("<br>")
-                .append(ColorUtil.wrapWithColorTag("+" + (hiddenCount - shown) + " more", TOOLTIP_LABEL_COLOUR));
-        }
-        return tooltip.toString();
+        return new HiddenItemsTooltip(hiddenCount, rows);
     }
 
     private static String tooltipRow(String label, String value, Color valueColour)
@@ -1481,7 +1674,7 @@ final class LootPopOverlay extends Overlay
     {
         try
         {
-            return itemManager.getImage(item.getItemId(), 1, false);
+            return itemImages.apply(item);
         }
         catch (RuntimeException ex)
         {
@@ -1491,6 +1684,12 @@ final class LootPopOverlay extends Overlay
 
     private TierVisual tierFor(LootNotification notification)
     {
+        if (notification.hasPendingPrices())
+        {
+            Color accent = notification.isCollectionLogUnlock() ? SealedDropRenderer.COLLECTION_GOLD
+                : rarityColour(rarestRarity(notification.getItems()));
+            return new TierVisual(accent, TOOLTIP_LABEL_COLOUR, ValueTier.BASE);
+        }
         return tierForValue(notification.getTotalValue());
     }
 
@@ -1531,23 +1730,7 @@ final class LootPopOverlay extends Overlay
 
     private Color rarityColour(DropRarity rarity)
     {
-        boolean colourblind = config.rarityPalette() == RarityPalette.COLOURBLIND;
-        switch (rarity)
-        {
-            case UNCOMMON:
-                return colourblind ? new Color(0, 158, 115) : new Color(105, 209, 125);
-            case RARE:
-                return colourblind ? new Color(0, 114, 178) : new Color(93, 173, 226);
-            case VERY_RARE:
-                return colourblind ? new Color(230, 159, 0) : new Color(199, 125, 255);
-            case ULTRA_RARE:
-                return colourblind ? new Color(213, 94, 0) : new Color(255, 77, 94);
-            case COMMON:
-                return new Color(184, 192, 204);
-            case UNKNOWN:
-            default:
-                return TOOLTIP_LABEL_COLOUR;
-        }
+        return LootTooltipStyle.rarity(rarity, config.rarityPalette());
     }
 
     private DropRarity rarestRarity(List<LootDisplayItem> items)
@@ -1609,14 +1792,7 @@ final class LootPopOverlay extends Overlay
 
     private void drawCollectionLogBadge(Graphics2D g, int x, int y)
     {
-        Font oldFont = g.getFont();
-        g.setFont(FontManager.getRunescapeBoldFont().deriveFont(Font.BOLD, 10f));
-        g.setColor(new Color(0, 0, 0, 180));
-        g.fillRoundRect(x, y, 27, 13, 5, 5);
-        g.setColor(new Color(255, 205, 72, 220));
-        g.drawRoundRect(x, y, 26, 12, 5, 5);
-        drawText(g, "NEW", x + 4, y + 10, new Color(255, 224, 112));
-        g.setFont(oldFont);
+        LootLogBadge.draw(g, x, y);
     }
 
     private void drawUltraRareItemGlow(

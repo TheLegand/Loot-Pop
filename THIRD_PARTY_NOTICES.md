@@ -12,6 +12,10 @@ The structured snapshot was obtained from the BSD-2-Clause licensed
 [`Pluckss/DropRatePluginFinal`](https://github.com/Pluckss/DropRatePluginFinal)
 data generator at commit `d370c9ad1085e9ef0040053dfa5c5e9e436990cc`.
 
+For Loot Pop 1.3.0, the generated NPC drop tables were refreshed from the
+OSRS Wiki Bucket API on 22 October 2026 using the repository's attributed
+crawler. Hand-maintained reward tables are separate from that refresh.
+
 The Loot Pop source code remains licensed under the repository's BSD
 2-Clause license. The OSRS Wiki data files retain the license above.
 

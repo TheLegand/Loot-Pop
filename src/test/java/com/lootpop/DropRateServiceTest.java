@@ -67,4 +67,34 @@ public class DropRateServiceTest
     {
         assertNull(service.findRate("Legendary test", DropRateService.NO_NPC_ID, "Twisted bow"));
     }
+
+    @Test
+    public void refreshedWikiSnapshotIncludesNewlyListedNpcDrops()
+    {
+        assertEquals("~1 / 134", service.findRate("Cave crawler", DropRateService.NO_NPC_ID, "Frozen tear"));
+        assertEquals("10 / 128", service.findRate("Banshee", DropRateService.NO_NPC_ID, "Energy potion(2)"));
+        assertEquals("1 / 139", service.findRate("Killerwatt", DropRateService.NO_NPC_ID, "Air battlestaff"));
+    }
+
+    @Test
+    public void refreshedVersionedDropsStillUseTheExactNpcId()
+    {
+        assertEquals("16 / 128", service.findRate("Dark wizard", 510, "Energy potion(3)"));
+        assertEquals("16 / 128", service.findRate("Dark wizard", 512, "Energy potion(2)"));
+    }
+
+    @Test
+    public void refreshedRareTablePreservesFractionalRolls()
+    {
+        DropRateInfo info = service.findRateInfo("Lizard Legends", DropRateService.NO_NPC_ID, "Dragon spear");
+        assertEquals("1.33 × 1 / 116508.4", info.getDisplayRate());
+        assertEquals(116508.4 / 1.33, info.getOneIn(), 0.0001);
+    }
+
+    @Test
+    public void removedWikiDropsDoNotRetainTheirOldChance()
+    {
+        assertNull(service.findRate("Lizard", DropRateService.NO_NPC_ID, "Coal"));
+        assertNull(service.findRate("Desert Lizard", DropRateService.NO_NPC_ID, "Waterskin(0)"));
+    }
 }

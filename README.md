@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/RuneLite-Plugin%20Hub-F28C28" alt="RuneLite Plugin Hub">
-  <img src="https://img.shields.io/badge/version-1.2.0-3fb950" alt="Version 1.2.0">
+  <img src="https://img.shields.io/badge/version-1.3.0-3fb950" alt="Version 1.3.0">
   <img src="https://img.shields.io/badge/Java-11-5382a1" alt="Java 11">
   <img src="https://img.shields.io/badge/license-BSD--2--Clause-8b5cf6" alt="BSD 2-Clause license">
 </p>
@@ -33,27 +33,105 @@ Loot Pop includes two complete experience modes. Both retain the essential loot 
 
 **Performance** keeps the lightweight behaviour of the original release while retaining every core usability feature. **Enhanced** adds glass, colour-reactive lighting, particles, item glows and layered rare-drop sounds. Change modes at any time from the plugin settings.
 
-## New in 1.2.0
+## New in 1.3.0
 
-- Adds an offline OSRS Wiki drop-rate database with automatic weekly maintenance after the usual game update.
-- Classifies drops as Common, Uncommon, Rare, Very rare or Ultra rare independently from their GP value.
-- Marks lucky drops and gives Ultra rare items a powerful animated glow in Enhanced mode.
-- Adds Compact, Detailed and Custom hover presets with concise quantity, GE, HA, stack value and drop-chance rows.
-- Adds smart two-row item layout to Classic Frame and Rugged Panel while keeping Loot Strip compact.
-- Makes the `+N` overflow badge hoverable so hidden drops remain inspectable.
-- Adds test scenarios for one popup, three separate kills and crowded drops.
-- Adds Reduce Motion, high-contrast text and a colourblind-safe rarity palette.
-- Keeps each defeated monster in its own popup; notifications are never merged across kills.
-- Pauses a popup's lifetime while it is hovered so details never disappear mid-read.
-- Queues rapid consecutive kills when the visible stack is full instead of immediately discarding their popups.
-- Adds a smooth Enhanced-mode slide, scale and staggered item reveal that respects Reduce Motion.
-- Keeps the configured visible time as a minimum, then gives Rare and Ultra rare drops extra time automatically.
-- Can optionally save local RuneLite screenshots for configurable rarity or GP thresholds.
-- Marks new Collection Log unlocks directly on the matching popup.
-- Adds a polished side panel with quick controls, item-image loot history and session statistics.
-- Gives every recent-loot item image its own compact hover with name, quantity, GE, HA, stack value and drop chance.
-- Shows stack quantities directly on Side Panel item icons and opens the matching OSRS Wiki page when an item or source name is clicked.
-- Filters session statistics by All sources or an individual boss/NPC encountered during the session.
+Keep your drops beyond the current session, revisit the highlights, and give rare rewards a little more room to shine.
+
+- **Loot Journal:** saved, per-character history with date navigation, source filters and Separate or Grouped views.
+- **Trophy Shelf:** a separate home for source bests, Ultra rare drops and new Collection Log unlocks.
+- **Session Recap:** your total, best drop, top item and other highlights in one place.
+- **Source Profiles:** open a source name to explore its saved drops and records.
+- **Sealed Drop:** optional rare-item reveals in Enhanced mode, with a special treatment for new Collection Log unlocks.
+- **Sidebar improvements:** clearer text, scrollable history, right-click actions and a safer Session Reset.
+
+See the [1.3.0 changelog](CHANGELOG.md#130) for the full changes since 1.2.0.
+
+## Your loot, saved locally
+
+Open **Journal** to browse recorded drops by date. Use **Filters** to choose a source, price mode or view, or jump straight to a saved date. Dates open independently, so you can compare several days without losing your place.
+
+**Separate** keeps each drop in its own card. **Grouped** combines items within each date using the current filters and their recorded values. It does not merge live popups or reprice old drops. GE and HA observations stay separate.
+
+The Journal also includes **Moments**, **Records** and a **Trophy Shelf**. Trophies have a separate storage limit and no age expiry; when the shelf fills up, the oldest trophies leave first. A better source best replaces the previous best-only trophy, while rare drops and Collection Log unlocks can remain.
+
+Saving is enabled by default, with up to **2,000 drops / 90 days** of ordinary history and **500 trophies**. Change these limits in Loot Journal settings. Only observed drops are recorded—not every kill, loot from before installation or another plugin's history.
+
+<table>
+  <tr>
+    <th>Separate</th>
+    <th>Grouped</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/v1.3.0/journal-separate.png" width="235" alt="Journal in Separate view, showing individual Goblin drops under an expandable date"></td>
+    <td align="center"><img src="docs/screenshots/v1.3.0/journal-grouped.png" width="235" alt="Journal in Grouped view, showing combined item quantities and recorded totals for two open dates"></td>
+  </tr>
+  <tr>
+    <td align="center">Browse each drop with its recorded value and time.</td>
+    <td align="center">See a day's items and quantities together.</td>
+  </tr>
+</table>
+
+## Session and source highlights
+
+Choose **Session recap** for an overview across the current session's sources, including the best fully priced drop, most valuable item stack, rarest known drop and Collection Log highlights. Highlights remain available after entries leave Recent Loot. Session time includes idle time; it is not an active-play timer.
+
+Click a source name for its **Source Profile**, based on retained Journal observations and trophies. Both pages let you switch between GE and HA without combining them. These are recorded loot totals, not all-time kill counts or net profit.
+
+**Session Reset** clears the current session and recap, not the saved Journal. Changing characters or restarting the plugin also starts a new recap. Clearing the Journal is a separate, confirmed action and includes its trophies and records.
+
+<table>
+  <tr>
+    <th>Session</th>
+    <th>Session Recap</th>
+    <th>Source Profile</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/v1.3.0/session.png" width="235" alt="Session sidebar with a centered loot total, drop count, average, best value and recent loot"></td>
+    <td align="center"><img src="docs/screenshots/v1.3.0/session-recap.png" width="235" alt="Session Recap with the best drop, top item and rarest known drop from a Goblin session"></td>
+    <td align="center"><img src="docs/screenshots/v1.3.0/source-profile.png" width="235" alt="Goblin Source Profile with saved loot value, best saved drop, top item, rarest known drop and recent moments"></td>
+  </tr>
+  <tr>
+    <td align="center">A quick overview while you play.</td>
+    <td align="center">The session's highlights in one place.</td>
+    <td align="center">Saved observations for one source.</td>
+  </tr>
+</table>
+
+## Sealed Drop reveals
+
+In **Enhanced** mode, Sealed Drop reveals eligible rare items before showing the rest of the loot. Confirmed new Collection Log unlocks receive a gold reveal, even when the item itself is common.
+
+Choose the minimum rarity and reveal speed in **Sealed Drop** settings, or use the sidebar gear for a quick toggle. Click a reveal to skip it. Performance mode remains instant, and Reduce Motion uses brief fades. The popup's reading time begins after the reveal finishes.
+
+To preview it, open **Sound & testing**, choose **Sealed Drop: two rare items** or **Collection Log: common item**, and enable **Show test popup**. Test drops do not enter your real Journal.
+
+<p align="center">
+  <img src="docs/demos/sealed-drop-v1.3.gif" width="468" alt="Sealed Drop demo: sealed rewards reveal in sequence, then settle into the normal loot popup">
+</p>
+
+<p align="center"><em>Recorded with the built-in test scenario; items, chances and values are simulated.</em></p>
+
+<details>
+  <summary>Sealed Drop and Collection Log screenshots</summary>
+
+<table>
+  <tr>
+    <th>Sealed reward</th>
+    <th>New Collection Log slot</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/v1.3.0/sealed-drop.png" width="350" alt="Sealed Drop test popup with an unrevealed item silhouette and question mark"></td>
+    <td align="center"><img src="docs/screenshots/v1.3.0/collection-log-reveal.png" width="350" alt="Test reveal showing a Twisted bow and the New Collection Log Slot message"></td>
+  </tr>
+</table>
+
+</details>
+
+## When a price is missing
+
+A missing GE quote is not counted as zero or replaced with an HA price. Partly priced drops show a known subtotal such as `100K+ gp`; drops with no known total show **Price pending**. Incomplete drops cannot set personal bests, and incomplete session averages are withheld.
+
+The Journal keeps the values and missing-price state observed at drop time rather than filling old entries with later market prices.
 
 ## Three distinct popup styles
 
@@ -133,12 +211,14 @@ Open RuneLite settings and search for **Loot Pop**.
 - **Loot filters:** minimum value, loot sources and ignore lists.
 - **Value colours:** custom thresholds and colours for every tier.
 - **Drop rarity:** independent rate thresholds, lucky marker and an Ultra-rare animated item glow.
+- **Sealed Drop:** rare-item reveals, Collection Log reveals and animation speed.
 - **Hover details:** Compact, Detailed or fully Custom information presets.
 - **Tier effects:** enable effects per tier and adjust their global intensity.
 - **Accessibility:** reduce motion, high-contrast text and a colourblind-safe rarity palette.
 - **Sound & testing:** rare-drop audio, volume and instant tier previews.
 - **Rare screenshots:** optional local capture with independent rarity and total-value thresholds.
 - **Side panel:** configurable recent-loot history size plus quick access to the main display controls.
+- **Loot Journal:** local history saving, retention limits, Trophy Shelf capacity, layout and personal-best banners.
 
 Hold <kbd>Alt</kbd> while dragging the overlay to reposition it. While holding <kbd>Alt</kbd>, drag a corner handle to resize the complete popup without stretching the item sprites. RuneLite preserves the chosen position and size.
 
@@ -153,7 +233,9 @@ Plugin updates are delivered through the RuneLite Plugin Hub after review.
 
 ## Privacy and fair play
 
-Loot Pop is display-only. The installed plugin does not automate game input, make background network requests, upload data or require an API key. Item sprites and pricing data come from RuneLite's existing APIs. Drop chances are read from a bundled OSRS Wiki data snapshot, so hover details remain fully offline while playing. Clicking an item or source in the Side Panel explicitly opens an OSRS Wiki search in the player's browser. Optional rare-drop screenshots are saved locally through RuneLite's own screenshot service and are disabled by default.
+Loot Pop is display-only. The installed plugin does not automate game input, make background network requests, upload data or require an API key. Item sprites and pricing data come from RuneLite's existing APIs. Drop chances are read from a bundled OSRS Wiki data snapshot, so hover details remain fully offline while playing. Item links and explicit Open Wiki actions open an OSRS Wiki search in the player's browser. Copy name writes only the chosen item name to the clipboard when requested. Optional rare-drop screenshots are saved locally through RuneLite's own screenshot service and are disabled by default.
+
+Journal metadata is stored in the RuneLite user directory under `loot-pop-journal/`, separately per character, with hashed filenames. It contains no credentials or item images and is not uploaded. Disabling saving keeps existing files; Session Reset does not erase them. Saves retain a previous-file backup, and an unreadable journal is left untouched with a visible error.
 
 ## Development
 

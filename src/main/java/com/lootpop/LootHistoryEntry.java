@@ -11,7 +11,19 @@ final class LootHistoryEntry
     private final long timestamp;
     private final DropRarity rarity;
     private final List<LootHistoryItem> items;
-    private boolean collectionLogUnlock;
+    private volatile boolean collectionLogUnlock;
+    private volatile long previousBest;
+    private PriceMode priceMode = PriceMode.GRAND_EXCHANGE;
+    private String id = java.util.UUID.randomUUID().toString();
+    private volatile boolean sourceBest;
+
+    String getId() { return id; }
+    void setId(String id) { this.id = id; }
+    boolean isSourceBest() { return sourceBest && !hasPendingPrices(); }
+    void setSourceBest(boolean best) { sourceBest = best; }
+    boolean hasPendingPrices() { return items.stream().anyMatch(LootHistoryItem::isPricePending); }
+    boolean isTrophy() { return isSourceBest() || collectionLogUnlock || rarity == DropRarity.ULTRA_RARE; }
+    String sourceKey() { return priceMode.name() + ":" + sourceName; }
 
     LootHistoryEntry(
         String sourceName,
@@ -31,6 +43,16 @@ final class LootHistoryEntry
     String getSourceName()
     {
         return sourceName;
+    }
+
+    long getPreviousBest() { return previousBest; }
+    boolean isPersonalBest() { return previousBest > 0 && !hasPendingPrices(); }
+    void setPreviousBest(long previous) { previousBest = previous; }
+    PriceMode getPriceMode() { return priceMode; }
+    void setPriceMode(PriceMode mode) { priceMode = mode; }
+    boolean isMoment()
+    {
+        return collectionLogUnlock || isPersonalBest() || rarity.ordinal() >= DropRarity.RARE.ordinal();
     }
 
     long getTotalValue()
