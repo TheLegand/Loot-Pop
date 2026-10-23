@@ -3,10 +3,9 @@ package com.lootpop;
 import com.google.gson.Gson;
 import com.google.gson.FieldNamingPolicy;
 import java.io.IOException;
+import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -14,40 +13,56 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.LinkedHashMap;
+import net.runelite.client.util.Filepath;
 
 /** Only item metadata is stored. No sprites, login names, credentials or network requests. */
 final class LootJournalStore
 {
-    private final Path directory;
+    @FunctionalInterface
+    interface Directory
+    {
+        Filepath get() throws IOException;
+    }
+
+    private final Directory directoryProvider;
+    private Filepath directory;
     private final Gson gson;
 
-    LootJournalStore(Path directory, Gson clientGson)
+    LootJournalStore(Directory directoryProvider, Gson clientGson)
     {
-        this.directory = directory;
+        this.directoryProvider = directoryProvider;
         // Keep the on-disk field names stable while inheriting RuneLite's Gson configuration.
         this.gson = clientGson.newBuilder().setFieldNamingPolicy(FieldNamingPolicy.IDENTITY).create();
     }
 
-    Path fileFor(String profile)
+    // Resolved on the journal's ordered IO lane, not on the client thread. Failed migration
+    // propagates to the service's read-only handling rather than creating an empty journal.
+    private Filepath directory() throws IOException
+    {
+        if (directory == null) { directory = directoryProvider.get(); }
+        return directory;
+    }
+
+    Filepath fileFor(String profile) throws IOException
     {
         try
         {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(profile.getBytes(StandardCharsets.UTF_8));
             StringBuilder name = new StringBuilder();
             for (byte b : digest) { name.append(String.format(java.util.Locale.ROOT, "%02x", b & 255)); }
-            return directory.resolve(name + ".json");
+            return directory().joinSegment(name + ".json");
         }
         catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
 
     LootJournal load(String profile) throws IOException
     {
-        Path file = fileFor(profile);
-        if (!Files.exists(file)) { return new LootJournal(); }
-        if (Files.size(file) > 16 * 1024 * 1024) { throw new IOException("Journal exceeds the safe read limit"); }
-        try
+        Filepath file = fileFor(profile);
+        if (!file.exists()) { return new LootJournal(); }
+        if (file.size() > 16 * 1024 * 1024) { throw new IOException("Journal exceeds the safe read limit"); }
+        try (Reader reader = file.openBufferedReader())
         {
-            Data data = gson.fromJson(Files.readString(file, StandardCharsets.UTF_8), Data.class);
+            Data data = gson.fromJson(reader, Data.class);
             if (data == null || (data.version != 1 && data.version != 2) || data.entries == null || data.bests == null
                 || data.entries.size() > 7000 || data.bests.size() > 4096)
             { throw new IOException("Unsupported journal format"); }
@@ -149,22 +164,23 @@ final class LootJournalStore
                 data.entries.add(saved);
             }
         }
-        Files.createDirectories(directory);
-        Path file = fileFor(profile);
-        Path temporary = Files.createTempFile(directory, "journal-", ".tmp");
+        Filepath root = directory();
+        root.createDirectories();
+        Filepath file = fileFor(profile);
+        Filepath temporary = root.createTempFile("journal-", ".tmp");
         try
         {
-            Files.writeString(temporary, gson.toJson(data), StandardCharsets.UTF_8);
-            if (Files.size(temporary) > 16 * 1024 * 1024) { throw new IOException("Journal exceeds storage limit"); }
-            if (Files.exists(file))
+            temporary.write(gson.toJson(data));
+            if (temporary.size() > 16 * 1024 * 1024) { throw new IOException("Journal exceeds storage limit"); }
+            if (file.exists())
             {
-                Files.copy(file, file.resolveSibling(file.getFileName() + ".bak"), StandardCopyOption.REPLACE_EXISTING);
+                file.copyTo(root.joinSegment(file.getFileName() + ".bak"), StandardCopyOption.REPLACE_EXISTING);
             }
-            try { Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
+            try { temporary.moveTo(file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
             catch (AtomicMoveNotSupportedException unsupported)
-            { Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING); }
+            { temporary.moveTo(file, StandardCopyOption.REPLACE_EXISTING); }
         }
-        finally { Files.deleteIfExists(temporary); }
+        finally { temporary.deleteIfExists(); }
     }
 
     private static final class Data

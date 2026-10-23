@@ -6,6 +6,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import static org.junit.Assert.*;
+import static com.lootpop.JournalTestFiles.*;
 
 public class TrophyShelfTest
 {
@@ -75,7 +76,7 @@ public class TrophyShelfTest
         LootHistoryEntry entry = new LootHistoryEntry("Boss", 0, now - 100 * 86400000L,
             DropRarity.ULTRA_RARE, Collections.singletonList(relic));
         entry.setCollectionLogUnlock(true); journal.record(entry, 100, 1, now);
-        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath(), new com.google.gson.Gson()); store.save("A", journal);
+        LootJournalStore store = store(temporary.newFolder().toPath(), new com.google.gson.Gson()); store.save("A", journal);
         LootJournal loaded = store.load("A"); assertTrue(loaded.snapshot().isEmpty());
         LootHistoryEntry trophy = loaded.trophySnapshot().get(0);
         assertEquals(entry.getId(), trophy.getId()); assertTrue(trophy.hasPendingPrices());
@@ -88,27 +89,27 @@ public class TrophyShelfTest
     {
         LootJournal journal = new LootJournal(); long now = System.currentTimeMillis();
         journal.record(drop("Boss", 1000, now, DropRarity.ULTRA_RARE), 100, 90, now);
-        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath(), new com.google.gson.Gson()); store.save("A", journal);
+        LootJournalStore store = store(temporary.newFolder().toPath(), new com.google.gson.Gson()); store.save("A", journal);
         LootJournal loaded = store.load("A"); assertSame(loaded.snapshot().get(0), loaded.trophySnapshot().get(0));
     }
 
     @Test
     public void legacyJournalIsReadWithoutLosingHistoryAndCreatesShelfFromAvailableMetadata() throws Exception
     {
-        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath(), new com.google.gson.Gson());
+        LootJournalStore store = store(temporary.newFolder().toPath(), new com.google.gson.Gson());
         LootJournal journal = new LootJournal(); long now = System.currentTimeMillis();
         journal.record(drop("Boss", 1000, now, DropRarity.ULTRA_RARE), 100, 90, now);
         store.save("A", journal);
-        com.google.gson.JsonObject legacy = new com.google.gson.JsonParser().parse(Files.readString(store.fileFor("A"))).getAsJsonObject();
+        com.google.gson.JsonObject legacy = new com.google.gson.JsonParser().parse(Files.readString(pathFor(store, "A"))).getAsJsonObject();
         legacy.addProperty("version", 1); legacy.remove("history"); legacy.remove("trophies");
         for (com.google.gson.JsonElement element : legacy.getAsJsonArray("entries"))
         { element.getAsJsonObject().remove("id"); element.getAsJsonObject().remove("sourceBest"); }
-        Files.writeString(store.fileFor("A"), legacy.toString());
+        Files.writeString(pathFor(store, "A"), legacy.toString());
         LootJournal loaded = store.load("A"); assertEquals(1, loaded.snapshot().size());
         assertEquals(1, loaded.trophySnapshot().size()); assertTrue(loaded.trophySnapshot().get(0).isSourceBest());
-        assertTrue(Files.readString(store.fileFor("A")).contains("\"version\":1"));
+        assertTrue(Files.readString(pathFor(store, "A")).contains("\"version\":1"));
         store.save("A", loaded);
-        assertTrue(Files.readString(store.fileFor("A")).contains("\"version\":2"));
-        assertTrue(Files.readString(store.fileFor("A").resolveSibling(store.fileFor("A").getFileName() + ".bak")).contains("\"version\":1"));
+        assertTrue(Files.readString(pathFor(store, "A")).contains("\"version\":2"));
+        assertTrue(Files.readString(pathFor(store, "A").resolveSibling(pathFor(store, "A").getFileName() + ".bak")).contains("\"version\":1"));
     }
 }

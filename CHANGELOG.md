@@ -15,6 +15,7 @@ Changes since 1.2.0.
 ### Keep more of your loot history
 
 - Added a Loot Journal that saves observed drops locally, with a separate history for each character. Browse by date, filter by source, or switch to Moments and Records to find the highlights.
+- Journal files use RuneLite's Filepath API and plugin data directory, with automatic migration from the earlier development location when the destination is absent.
 - Choose Separate to see each drop on its own, or Grouped to combine the items recorded on a given day. Grouping only changes the Journal view; live popups still show each drop separately.
 - Added a Trophy Shelf for source bests, Ultra rare drops and new Collection Log unlocks. It has its own storage limit, so highlights can stay after ordinary history expires.
 

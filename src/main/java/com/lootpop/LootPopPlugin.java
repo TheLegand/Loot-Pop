@@ -31,7 +31,6 @@ import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.events.ServerNpcLoot;
 import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.client.events.ProfileChanged;
-import net.runelite.client.RuneLite;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStack;
 import net.runelite.client.input.MouseManager;
@@ -48,6 +47,8 @@ import net.runelite.http.api.loottracker.LootRecordType;
 
 @PluginDescriptor(
     name = "Loot Pop",
+    internalName = "loot-pop",
+    legacyDataDirectory = "loot-pop-journal",
     description = "Compact loot popups, rare-item reveals and a local loot journal with session and source highlights",
     tags = {"loot", "drop", "popup", "hud", "overlay", "price", "rare", "journal"}
 )
@@ -139,7 +140,7 @@ public class LootPopPlugin extends Plugin
     protected void startUp()
     {
         migrateLegacyLegendaryColour();
-        journal = new LootJournalService(new LootJournalStore(RuneLite.RUNELITE_DIR.toPath().resolve("loot-pop-journal"), gson),
+        journal = new LootJournalService(new LootJournalStore(this::getPluginDirectory, gson),
             this::refreshSidePanel, config::journalLimit, config::journalDays, journalExecutor, config::trophyLimit);
         switchJournalProfile();
         overlayManager.add(overlay);

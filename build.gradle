@@ -37,6 +37,11 @@ tasks.withType(JavaCompile).configureEach {
     options.compilerArgs.add('-Xlint:deprecation')
 }
 
+tasks.withType(Test).configureEach {
+    // Isolated migration probes must never resolve the developer's real RuneLite directory.
+    systemProperty 'lootpop.testClasspath', sourceSets.test.runtimeClasspath.asPath
+}
+
 tasks.register('run', JavaExec) {
     classpath = sourceSets.test.runtimeClasspath
     mainClass = pluginMainClass

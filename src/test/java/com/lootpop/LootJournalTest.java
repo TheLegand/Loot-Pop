@@ -9,6 +9,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import static org.junit.Assert.*;
+import static com.lootpop.JournalTestFiles.*;
 
 public class LootJournalTest
 {
@@ -52,7 +53,7 @@ public class LootJournalTest
     @Test
     public void metadataRoundTripPreservesSnapshotsUnlocksAndRecordsWithoutSavingSprites() throws Exception
     {
-        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath(), new com.google.gson.Gson());
+        LootJournalStore store = store(temporary.newFolder().toPath(), new com.google.gson.Gson());
         LootJournal journal = new LootJournal(); long now = System.currentTimeMillis();
         journal.record(entry("Boss", 100, now), 100, 90, now);
         LootHistoryEntry record = entry("Boss", 200, now + 1);
@@ -65,18 +66,18 @@ public class LootJournalTest
         assertEquals("1 / 5,000", restored.getItems().get(0).getDropRate());
         assertEquals(12000, restored.getItems().get(0).getHighAlchemyPrice());
         assertNull(restored.getItems().get(0).getImage());
-        String json = Files.readString(store.fileFor("profile-a"));
+        String json = Files.readString(pathFor(store, "profile-a"));
         assertFalse(json.contains("profile-a")); assertFalse(json.contains("image"));
         store.save("profile-a", journal);
-        assertTrue(Files.exists(store.fileFor("profile-a").resolveSibling(store.fileFor("profile-a").getFileName() + ".bak")));
+        assertTrue(Files.exists(pathFor(store, "profile-a").resolveSibling(pathFor(store, "profile-a").getFileName() + ".bak")));
     }
 
     @Test
     public void profileKeysCannotEscapeDirectoryAndAccountsNeverMix() throws Exception
     {
-        Path directory = temporary.newFolder().toPath(); LootJournalStore store = new LootJournalStore(directory, new com.google.gson.Gson());
-        assertEquals(directory, store.fileFor("../../another-folder").getParent());
-        assertNotEquals(store.fileFor("account1"), store.fileFor("account2"));
+        Path directory = temporary.newFolder().toPath(); LootJournalStore store = store(directory, new com.google.gson.Gson());
+        assertEquals(directory, pathFor(store, "../../another-folder").getParent());
+        assertNotEquals(pathFor(store, "account1"), pathFor(store, "account2"));
         assertTrue(store.load("account2").snapshot().isEmpty());
     }
 
@@ -87,7 +88,7 @@ public class LootJournalTest
             .serializeNulls()
             .setFieldNamingPolicy(com.google.gson.FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
             .create();
-        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath(), clientGson);
+        LootJournalStore store = store(temporary.newFolder().toPath(), clientGson);
         long now = System.currentTimeMillis();
         LootJournal journal = new LootJournal();
         LootHistoryEntry entry = new LootHistoryEntry("Boss", 100, now, DropRarity.UNKNOWN,
@@ -95,7 +96,7 @@ public class LootJournalTest
                 null, DropRarity.UNKNOWN, null).withItemId(1)));
         journal.record(entry, 100, 90, now);
         store.save("A", journal);
-        String json = Files.readString(store.fileFor("A"));
+        String json = Files.readString(pathFor(store, "A"));
         assertTrue("Inherited serializeNulls option", json.contains("\"chance\":null"));
         assertTrue("Existing Journal field names remain compatible", json.contains("\"sourceBest\":true"));
         assertFalse(json.contains("source_best"));
@@ -105,7 +106,7 @@ public class LootJournalTest
     @Test
     public void asyncProfileSwitchesFlushInOrderAndKeepIndependentRecords() throws Exception
     {
-        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath(), new com.google.gson.Gson());
+        LootJournalStore store = store(temporary.newFolder().toPath(), new com.google.gson.Gson());
         LootJournalService service = service(store);
         long now = System.currentTimeMillis();
         service.switchProfile("A");
@@ -122,12 +123,12 @@ public class LootJournalTest
     @Test
     public void unreadableHistoryIsNotSilentlyOverwritten() throws Exception
     {
-        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath(), new com.google.gson.Gson());
-        Files.writeString(store.fileFor("A"), "{bad-json");
+        LootJournalStore store = store(temporary.newFolder().toPath(), new com.google.gson.Gson());
+        Files.writeString(pathFor(store, "A"), "{bad-json");
         LootJournalService service = service(store);
         service.switchProfile("A"); record(service, "Boss", 100, System.currentTimeMillis());
         closeAndDrain(service);
-        assertEquals("{bad-json", Files.readString(store.fileFor("A")));
+        assertEquals("{bad-json", Files.readString(pathFor(store, "A")));
         assertFalse(service.canClear()); assertTrue(service.status().contains("untouched"));
         assertTrue("A compact sidebar must still receive actionable file errors", service.notice().contains("untouched"));
     }
@@ -135,7 +136,7 @@ public class LootJournalTest
     @Test
     public void lateCollectionConfirmationSurvivesRestart() throws Exception
     {
-        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath(), new com.google.gson.Gson());
+        LootJournalStore store = store(temporary.newFolder().toPath(), new com.google.gson.Gson());
         LootJournalService service = service(store);
         long now = System.currentTimeMillis(); service.switchProfile("A"); record(service, "Boss", 100, now);
         service.confirmCollection("Boss", now); closeAndDrain(service);
@@ -145,7 +146,7 @@ public class LootJournalTest
     @Test
     public void confirmedClearResetsRecordsWhilePreservingLastBackup() throws Exception
     {
-        LootJournalStore store = new LootJournalStore(temporary.newFolder().toPath(), new com.google.gson.Gson());
+        LootJournalStore store = store(temporary.newFolder().toPath(), new com.google.gson.Gson());
         LootJournal baseline = new LootJournal();
         baseline.record(entry("Boss", 100, System.currentTimeMillis()), 100, 90, System.currentTimeMillis());
         store.save("A", baseline);
@@ -153,7 +154,53 @@ public class LootJournalTest
         service.switchProfile("A"); service.clear(); closeAndDrain(service);
         assertTrue(store.load("A").snapshot().isEmpty());
         assertTrue(store.load("A").bests.isEmpty());
-        assertTrue(Files.readString(store.fileFor("A").resolveSibling(store.fileFor("A").getFileName() + ".bak")).contains("Boss"));
+        assertTrue(Files.readString(pathFor(store, "A").resolveSibling(pathFor(store, "A").getFileName() + ".bak")).contains("Boss"));
+    }
+
+    @Test
+    public void directoryIsResolvedOnceOnTheBackgroundLaneNotAtConstruction() throws Exception
+    {
+        Thread caller = Thread.currentThread();
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        Path directory = temporary.newFolder().toPath();
+        LootJournalStore store = new LootJournalStore(() ->
+        {
+            assertNotSame(caller, Thread.currentThread());
+            calls.incrementAndGet();
+            return net.runelite.client.util.Filepath.Unchecked.getRooted(directory);
+        }, new com.google.gson.Gson());
+        assertEquals(0, calls.get());
+        LootJournalService service = service(store);
+        service.switchProfile("A");
+        record(service, "Boss", 100, System.currentTimeMillis());
+        service.switchProfile("B");
+        record(service, "Boss", 200, System.currentTimeMillis());
+        closeAndDrain(service);
+        assertEquals(1, calls.get());
+        assertEquals(100, store.load("A").snapshot().get(0).getTotalValue());
+        assertEquals(200, store.load("B").snapshot().get(0).getTotalValue());
+    }
+
+    @Test
+    public void failedBackupLeavesPrimaryUntouchedAndCleansTemporaryFile() throws Exception
+    {
+        Path directory = temporary.newFolder().toPath();
+        LootJournalStore store = store(directory, new com.google.gson.Gson());
+        LootJournal journal = new LootJournal();
+        long now = System.currentTimeMillis();
+        journal.record(entry("Boss", 100, now), 100, 90, now);
+        store.save("A", journal);
+        Path primary = pathFor(store, "A");
+        byte[] original = Files.readAllBytes(primary);
+        Path backup = primary.resolveSibling(primary.getFileName() + ".bak");
+        Files.createDirectory(backup);
+        Files.writeString(backup.resolve("keep.txt"), "untouched");
+        journal.record(entry("Boss", 200, now + 1), 100, 90, now);
+        assertThrows(java.io.IOException.class, () -> store.save("A", journal));
+        assertArrayEquals(original, Files.readAllBytes(primary));
+        assertEquals("untouched", Files.readString(backup.resolve("keep.txt")));
+        try (java.util.stream.Stream<Path> files = Files.list(directory))
+        { assertFalse(files.anyMatch(p -> p.getFileName().toString().endsWith(".tmp"))); }
     }
 
     private static void record(LootJournalService service, String source, long value, long now)

@@ -231,7 +231,7 @@ Plugin updates are delivered through the RuneLite Plugin Hub after review.
 
 Loot Pop is display-only. The installed plugin does not automate game input, make background network requests, upload data or require an API key. Item sprites and pricing data come from RuneLite's existing APIs. Drop chances are read from a bundled OSRS Wiki data snapshot, so hover details remain fully offline while playing. Item links and explicit Open Wiki actions open an OSRS Wiki search in the player's browser. Copy name writes only the chosen item name to the clipboard when requested. Optional rare-drop screenshots are saved locally through RuneLite's own screenshot service and are disabled by default.
 
-Journal metadata is stored in the RuneLite user directory under `loot-pop-journal/`, separately per character, with hashed filenames. It contains no credentials or item images and is not uploaded. Disabling saving keeps existing files; Session Reset does not erase them. Saves retain a previous-file backup, and an unreadable journal is left untouched with a visible error.
+Journal metadata is stored in the RuneLite user directory under `plugin-data/loot-pop/`, separately per character, with hashed filenames. File access uses RuneLite's Filepath API. On first use, RuneLite moves an existing `loot-pop-journal/` folder to the new location if the destination does not already exist; if both folders exist, neither is merged or overwritten and the new location is used. It contains no credentials or item images and is not uploaded. Disabling saving keeps existing files; Session Reset does not erase them. Saves retain a previous-file backup, and an unreadable journal is left untouched with a visible error.
 
 ## Development
 
