@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/RuneLite-Plugin%20Hub-F28C28" alt="RuneLite Plugin Hub">
-  <img src="https://img.shields.io/badge/version-1.3.0-3fb950" alt="Version 1.3.0">
+  <img src="https://img.shields.io/badge/version-1.3.1-3fb950" alt="Version 1.3.1">
   <img src="https://img.shields.io/badge/Java-11-5382a1" alt="Java 11">
   <img src="https://img.shields.io/badge/license-BSD--2--Clause-8b5cf6" alt="BSD 2-Clause license">
 </p>
@@ -111,6 +111,12 @@ To preview it, open **Sound & testing**, choose **Sealed Drop: two rare items** 
   </tr>
 </table>
 
+## New in 1.3.1
+
+A small bug-fix update: Bonecrusher no longer produces duplicate loot popups, and identical rewards from separate rapid NPC kills are kept as separate drops. A new **Show side panel** toggle at the top of the settings lets you hide the sidebar button while keeping popups and history running.
+
+See the [1.3.1 changelog](CHANGELOG.md#131).
+
 ## New in 1.3.0
 
 Rare rewards now have their own reveal. This update also adds saved loot history and new ways to look back at a session.
@@ -201,6 +207,8 @@ The Journal keeps the values and missing-price state observed at drop time rathe
 ## Controls and configuration
 
 Open RuneLite settings and search for **Loot Pop**.
+
+**Show side panel** is the first option. Turn it off to remove the Loot Pop sidebar button while keeping loot popups, session tracking and saved history running. Turn it back on to browse the current session and Journal again.
 
 - **Appearance:** experience mode, popup style, background, scale and visible items.
 - **Behaviour:** full-visibility time, fade duration, popup spacing, simultaneous popup count, hover pause and queued kills.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.1
+
+Changes since 1.3.0.
+
+- Fixed duplicate NPC loot popups when using Bonecrusher. The same drop is no longer counted twice in the session or Journal.
+- Identical rewards from separate rapid NPC kills are now kept as separate drops.
+- Added **Show side panel** at the top of the plugin settings. The sidebar button can be hidden or restored without restarting the plugin; popups, session tracking and saved history keep working.
+
 ## 1.3.0
 
 Changes since 1.2.0.

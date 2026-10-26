@@ -18,6 +18,63 @@ import static org.junit.Assert.*;
 
 public class LootJournalPanelTest
 {
+    @Test public void maximumRecentLootScrollsWithoutGrowingTheSidebar() throws Exception
+    {
+        List<LootHistoryEntry> live = new java.util.ArrayList<>();
+        LootHistoryItem coins = new LootHistoryItem(100, "Coins", 1, 0, 100,
+            null, DropRarity.COMMON, SealedDropRendererTest.coins()).withItemId(995);
+        LootPopPlugin fake = new LootPopPlugin()
+        {
+            @Override synchronized List<LootHistoryEntry> getLootHistory() { return new java.util.ArrayList<>(live); }
+            @Override String getJournalStatus() { return "Recent Loot regression test"; }
+            @Override synchronized SessionSnapshot getSessionSnapshot(String source)
+            { return new SessionSnapshot(live.size(), live.size() * 100L, "Goblin", 100); }
+        };
+        SwingUtilities.invokeAndWait(() ->
+        {
+            LootPopPanel panel = new LootPopPanel(fake, new LootPopConfig()
+            { @Override public int historySize() { return 50; } }, null);
+            panel.setSize(242, 450); layout(panel); layout(panel);
+            java.awt.Dimension preferred = panel.getPreferredSize();
+            java.awt.Dimension minimum = panel.getMinimumSize();
+            for (int i = 0; i < 50; i++)
+            {
+                live.add(new LootHistoryEntry("Goblin", 100, System.currentTimeMillis(), DropRarity.COMMON,
+                    Collections.singletonList(coins)));
+                panel.refresh(); layout(panel); layout(panel);
+                assertEquals(preferred, panel.getPreferredSize());
+                assertEquals(minimum, panel.getMinimumSize());
+                assertEquals(450, panel.getHeight());
+            }
+            javax.swing.JScrollPane scroll = findScroll(panel);
+            assertTrue(scroll.getVerticalScrollBar().isVisible());
+            assertEquals(50, countNamed(panel, "loot-drop-value"));
+            assertEquals(0, panel.getPreferredSize().height);
+            assertEquals(0, panel.getMinimumSize().height);
+            scroll.getVerticalScrollBar().setValue(scroll.getVerticalScrollBar().getMaximum());
+            layout(panel);
+            assertTrue(scroll.getViewport().getViewPosition().y > 0);
+            assertEquals(450, panel.getHeight());
+            panel.setSize(242, 620); layout(panel); layout(panel);
+            assertEquals(620, scroll.getHeight());
+            live.clear(); panel.refresh(); layout(panel); layout(panel);
+            assertEquals(preferred, panel.getPreferredSize());
+            assertEquals(minimum, panel.getMinimumSize());
+            assertEquals(0, countNamed(panel, "loot-drop-value"));
+        });
+    }
+
+    private static int countNamed(Container parent, String name)
+    {
+        int count = 0;
+        for (Component child : parent.getComponents())
+        {
+            if (name.equals(child.getName())) { count++; }
+            if (child instanceof Container) { count += countNamed((Container) child, name); }
+        }
+        return count;
+    }
+
     @Test public void dateJumpBringsAnOlderDayIntoViewAndReopeningReturnsToNewest() throws Exception
     {
         long now = System.currentTimeMillis();

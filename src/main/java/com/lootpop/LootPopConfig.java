@@ -13,6 +13,14 @@ public interface LootPopConfig extends Config
 {
     String GROUP = "lootpop";
 
+    @ConfigItem(
+        keyName = "showSidePanel",
+        name = "Show side panel",
+        description = "Show the Loot Pop sidebar button. Hiding it keeps popups, session totals and saved history running.",
+        position = -1
+    )
+    default boolean showSidePanel() { return true; }
+
     @ConfigSection(
         name = "Appearance",
         description = "Popup layout and background",

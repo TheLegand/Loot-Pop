@@ -18,7 +18,6 @@ import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.ItemComposition;
-import net.runelite.api.NPC;
 import net.runelite.api.NPCComposition;
 import net.runelite.api.SoundEffectID;
 import net.runelite.api.events.ChatMessage;
@@ -27,7 +26,6 @@ import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
-import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.events.ServerNpcLoot;
 import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.client.events.ProfileChanged;
@@ -40,7 +38,6 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.loottracker.LootReceived;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.ui.ClientToolbar;
-import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageCapture;
 import net.runelite.client.util.Text;
 import net.runelite.http.api.loottracker.LootRecordType;
@@ -123,8 +120,7 @@ public class LootPopPlugin extends Plugin
     private int sessionPendingDrops;
     private String sessionBestSource = "";
     private long sessionBestValue;
-    private LootPopPanel sidePanel;
-    private NavigationButton navigationButton;
+    private volatile LootSidebar sidebar;
     private volatile LootJournalService journal;
     private String journalProfile;
     @Inject
@@ -145,14 +141,9 @@ public class LootPopPlugin extends Plugin
         switchJournalProfile();
         overlayManager.add(overlay);
         mouseManager.registerMouseListener(revealMouseListener);
-        sidePanel = new LootPopPanel(this, config, configManager);
-        navigationButton = NavigationButton.builder()
-            .tooltip("Loot Pop")
-            .icon(LootPopPanel.createNavigationIcon())
-            .priority(8)
-            .panel(sidePanel)
-            .build();
-        clientToolbar.addNavigation(navigationButton);
+        sidebar = new LootSidebar(() -> new LootPopPanel(this, config, configManager),
+            clientToolbar::addNavigation, clientToolbar::removeNavigation);
+        syncSidebar();
     }
 
     private void migrateLegacyLegendaryColour()
@@ -178,12 +169,9 @@ public class LootPopPlugin extends Plugin
         overlayManager.remove(overlay);
         mouseManager.unregisterMouseListener(revealMouseListener);
         overlay.clearRevealTargets();
-        if (navigationButton != null)
-        {
-            clientToolbar.removeNavigation(navigationButton);
-            navigationButton = null;
-        }
-        sidePanel = null;
+        LootSidebar previousSidebar = sidebar;
+        sidebar = null;
+        if (previousSidebar != null) { SwingUtilities.invokeLater(() -> previousSidebar.setVisible(false)); }
         if (journal != null) { journal.close(); journal = null; }
         journalProfile = null;
         notifications.clear();
@@ -215,18 +203,10 @@ public class LootPopPlugin extends Plugin
     }
 
     @Subscribe
-    public void onNpcLootReceived(NpcLootReceived event)
-    {
-        NPC npc = event.getNpc();
-        if (npc != null)
-        {
-            handleLoot(npc.getName(), LootRecordType.NPC, event.getItems(), npc.getId());
-        }
-    }
-
-    @Subscribe
     public void onServerNpcLoot(ServerNpcLoot event)
     {
+        // Use the same authoritative stream as RuneLite's Loot Tracker. Ground-item
+        // inference also fires for this kill, but can omit Bonecrusher-consumed bones.
         NPCComposition composition = event.getComposition();
         if (composition != null)
         {
@@ -307,7 +287,10 @@ public class LootPopPlugin extends Plugin
 
         synchronized (this)
         {
-            if (eventHash.equals(lastEventHash) && now - lastEventAtMillis < DUPLICATE_WINDOW_MILLIS)
+            // Each ServerNpcLoot event is a distinct reward. Identical loot from two
+            // rapid kills must not be swallowed by the generic time-window guard.
+            if (type != LootRecordType.NPC && eventHash.equals(lastEventHash)
+                && now - lastEventAtMillis < DUPLICATE_WINDOW_MILLIS)
             {
                 return;
             }
@@ -494,10 +477,7 @@ public class LootPopPlugin extends Plugin
         }
         if ("savedLootHistory".equals(event.getKey())) { switchJournalProfile(); }
 
-        if (sidePanel != null)
-        {
-            sidePanel.syncControls();
-        }
+        syncSidebar();
 
         if (!"showTestPopup".equals(event.getKey()) || !config.showTestPopup())
         {
@@ -751,11 +731,23 @@ public class LootPopPlugin extends Plugin
 
     private void refreshSidePanel()
     {
-        LootPopPanel panel = sidePanel;
-        if (panel != null)
+        LootSidebar current = sidebar;
+        if (current != null && current.panel() != null)
         {
-            SwingUtilities.invokeLater(panel::refresh);
+            SwingUtilities.invokeLater(() -> { if (sidebar == current) { current.refresh(); } });
         }
+    }
+
+    private void syncSidebar()
+    {
+        LootSidebar current = sidebar;
+        if (current == null) { return; }
+        SwingUtilities.invokeLater(() ->
+        {
+            if (sidebar != current) { return; }
+            current.setVisible(config.showSidePanel());
+            if (current.panel() != null) { current.panel().syncControls(); }
+        });
     }
 
     private void takeAutomaticScreenshot(
